@@ -1,0 +1,22 @@
+{
+  "name": "nexchat",
+  "version": "1.0.0",
+  "private": true,
+  "packageManager": "pnpm@11.21.0",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @nexchat/api --filter @nexchat/web dev",
+    "build": "pnpm --recursive build",
+    "lint": "eslint .",
+    "typecheck": "pnpm --recursive typecheck",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.8.1",
+    "prettier": "^3.6.2",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.67.0"
+  },
+  "type": "module"
+}

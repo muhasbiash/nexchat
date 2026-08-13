@@ -1,0 +1,9 @@
+node_modules
+.pnpm
+dist
+build
+coverage
+.next
+.git
+docker-data
+pnpm-lock.yaml
