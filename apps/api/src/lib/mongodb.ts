@@ -1,31 +1,29 @@
-import { MongoClient } from 'mongodb';
+import { MongoClient, type Db } from 'mongodb';
 
-const uri = process.env.MONGO_URI;
+const mongoUri = process.env.MONGO_URI;
 
-if (!uri) {
+if (!mongoUri) {
   throw new Error('MONGO_URI is not defined');
 }
 
-const client = new MongoClient(uri);
+const client = new MongoClient(mongoUri);
 
-let connected = false;
+let db: Db | null = null;
 
-export async function connectMongo(): Promise<void> {
-  if (connected) {
-    return;
-  }
-
+export async function connectMongo(): Promise<Db> {
   await client.connect();
 
-  await client.db('nexchat').command({
-    ping: 1,
-  });
+  db = client.db();
 
-  connected = true;
+  console.log('Connected to MongoDB');
 
-  console.log('MongoDB connected');
+  return db;
 }
 
-export function getMongoClient(): MongoClient {
-  return client;
+export function getMongoDb(): Db {
+  if (!db) {
+    throw new Error('MongoDB is not connected');
+  }
+
+  return db;
 }
