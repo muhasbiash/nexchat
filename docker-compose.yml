@@ -1,0 +1,16 @@
+services:
+  mongo:
+    image: mongo:8
+    container_name: nexchat-mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      MONGO_INITDB_DATABASE: ${MONGO_DATABASE}
+    ports:
+      - '${MONGO_PORT}:27017'
+    volumes:
+      - nexchat-mongo-data:/data/db
+
+volumes:
+  nexchat-mongo-data:

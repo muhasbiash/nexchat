@@ -1,24 +1,43 @@
+import 'dotenv/config';
+
 import cors from 'cors';
 import express from 'express';
 
+import type { HealthResponse } from '@nexchat/shared';
+
+import { connectMongo } from './lib/mongodb.js';
+
 const app = express();
+
 const port = Number(process.env.PORT) || 3000;
+const webOrigin = process.env.WEB_ORIGIN || 'http://localhost:5173';
 
 app.use(
   cors({
-    origin: 'http://localhost:5173',
+    origin: webOrigin,
   }),
 );
 
 app.use(express.json());
 
 app.get('/health', (_req, res) => {
-  res.json({
+  const response: HealthResponse = {
     status: 'ok',
     service: 'nexchat-api',
-  });
+  };
+
+  res.json(response);
 });
 
-app.listen(port, () => {
-  console.log(`NexChat API running on http://localhost:${port}`);
+async function start(): Promise<void> {
+  await connectMongo();
+
+  app.listen(port, () => {
+    console.log(`NexChat API running on http://localhost:${port}`);
+  });
+}
+
+start().catch((error) => {
+  console.error('Failed to start NexChat API:', error);
+  process.exit(1);
 });
