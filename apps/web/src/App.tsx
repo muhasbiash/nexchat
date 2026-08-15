@@ -1,15 +1,14 @@
 import { useState } from 'react';
 
-import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import { useAuth } from './hooks/use-auth';
-import { HomePage } from './pages/HomePage';
+import { ChatPage } from './pages/ChatPage';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 
 type Page = 'login' | 'register';
 
 function App() {
-  const { user, loading, logout } = useAuth();
+  const { user, loading } = useAuth();
 
   const [page, setPage] = useState<Page>('login');
 
@@ -25,29 +24,7 @@ function App() {
     return <LoginPage onRegister={() => setPage('register')} />;
   }
 
-  return (
-    <ProtectedRoute>
-      <div>
-        <header>
-          <h1>NexChat</h1>
-
-          <p>
-            Welcome, <strong>{user.name}</strong>
-          </p>
-
-          <p>{user.email}</p>
-
-          <button type="button" onClick={logout}>
-            Logout
-          </button>
-        </header>
-
-        <main>
-          <HomePage />
-        </main>
-      </div>
-    </ProtectedRoute>
-  );
+  return <ChatPage />;
 }
 
 export default App;

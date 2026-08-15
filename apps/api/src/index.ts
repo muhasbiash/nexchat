@@ -7,6 +7,8 @@ import type { HealthResponse } from '@nexchat/shared';
 
 import { connectMongo } from './lib/mongodb.js';
 import authRoutes from './routes/auth.routes.js';
+import conversationRoutes from './routes/conversation.routes.js';
+import messageRoutes from './routes/message.routes.js';
 
 const app = express();
 
@@ -22,7 +24,8 @@ app.use(
 app.use(express.json());
 
 app.use('/api/auth', authRoutes);
-
+app.use('/api/conversations', conversationRoutes);
+app.use('/api/messages', messageRoutes);
 app.get('/health', (_req, res) => {
   const response: HealthResponse = {
     status: 'ok',

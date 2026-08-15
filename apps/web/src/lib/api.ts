@@ -1,3 +1,6 @@
+import type { Conversation, ConversationsResponse } from '../types/conversation';
+import type { Message, MessagesResponse } from '../types/message';
+
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 interface RequestOptions extends RequestInit {
@@ -31,4 +34,32 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   }
 
   return data as T;
+}
+
+export async function getConversations(): Promise<Conversation[]> {
+  const data = await api<ConversationsResponse>('/api/conversations', {
+    authenticated: true,
+  });
+
+  return data.conversations;
+}
+
+export async function getMessages(conversationId: string): Promise<Message[]> {
+  const data = await api<MessagesResponse>(`/api/messages/${conversationId}`, {
+    authenticated: true,
+  });
+
+  return data.messages;
+}
+
+export async function sendMessage(conversationId: string, content: string): Promise<Message> {
+  const data = await api<{ message: Message }>(`/api/messages/${conversationId}`, {
+    method: 'POST',
+    authenticated: true,
+    body: JSON.stringify({
+      content,
+    }),
+  });
+
+  return data.message;
 }
