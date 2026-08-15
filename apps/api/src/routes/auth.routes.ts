@@ -1,5 +1,7 @@
 import { Router, type Router as ExpressRouter } from 'express';
 
+import { requireAuth, type AuthenticatedRequest } from '../middleware/auth.middleware.js';
+import { findUserById } from '../repositories/user.repository.js';
 import { login, register } from '../services/auth.service.js';
 
 const router: ExpressRouter = Router();
@@ -68,6 +70,38 @@ router.post('/login', async (req, res) => {
     }
 
     console.error('Login error:', error);
+
+    return res.status(500).json({
+      message: 'Internal server error',
+    });
+  }
+});
+
+router.get('/me', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    if (!req.userId) {
+      return res.status(401).json({
+        message: 'Authentication required',
+      });
+    }
+
+    const user = await findUserById(req.userId);
+
+    if (!user) {
+      return res.status(404).json({
+        message: 'User not found',
+      });
+    }
+
+    return res.json({
+      user: {
+        id: user._id?.toString(),
+        name: user.name,
+        email: user.email,
+      },
+    });
+  } catch (error) {
+    console.error('Get current user error:', error);
 
     return res.status(500).json({
       message: 'Internal server error',

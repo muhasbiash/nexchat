@@ -1,9 +1,9 @@
-import type { Collection } from 'mongodb';
+import { ObjectId, type Collection } from 'mongodb';
 
 import { getMongoDb } from '../lib/mongodb.js';
 
 export interface User {
-  _id?: string;
+  _id?: ObjectId;
   name: string;
   email: string;
   passwordHash: string;
@@ -25,6 +25,16 @@ export const findUserByEmail = async (email: string): Promise<User | null> => {
   return getUsersCollection().findOne({ email });
 };
 
+export const findUserById = async (id: string): Promise<User | null> => {
+  if (!ObjectId.isValid(id)) {
+    return null;
+  }
+
+  return getUsersCollection().findOne({
+    _id: new ObjectId(id),
+  });
+};
+
 export const createUser = async (input: CreateUserInput): Promise<User> => {
   const now = new Date();
 
@@ -40,6 +50,6 @@ export const createUser = async (input: CreateUserInput): Promise<User> => {
 
   return {
     ...user,
-    _id: result.insertedId.toString(),
+    _id: result.insertedId,
   };
 };

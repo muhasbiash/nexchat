@@ -26,13 +26,17 @@ export interface AuthUser {
   email: string;
 }
 
-const sanitizeUser = (user: { _id?: string; name: string; email: string }): AuthUser => {
+const sanitizeUser = (user: {
+  _id?: { toString(): string };
+  name: string;
+  email: string;
+}): AuthUser => {
   if (!user._id) {
     throw new Error('User ID is missing');
   }
 
   return {
-    id: user._id,
+    id: user._id.toString(),
     name: user.name,
     email: user.email,
   };
@@ -79,7 +83,7 @@ export const login = async (input: LoginInput): Promise<{ user: AuthUser; token:
 
   const token = jwt.sign(
     {
-      sub: user._id,
+      sub: user._id.toString(),
       email: user.email,
     },
     jwtSecret,
