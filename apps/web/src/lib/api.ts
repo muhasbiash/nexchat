@@ -1,16 +1,34 @@
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
-export interface HealthResponse {
-  status: 'ok';
-  service: string;
+interface RequestOptions extends RequestInit {
+  authenticated?: boolean;
 }
 
-export async function getHealth(): Promise<HealthResponse> {
-  const response = await fetch(`${API_URL}/health`);
+export async function api<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const { authenticated = false, ...fetchOptions } = options;
 
-  if (!response.ok) {
-    throw new Error(`API request failed: ${response.status}`);
+  const headers = new Headers(fetchOptions.headers);
+
+  headers.set('Content-Type', 'application/json');
+
+  if (authenticated) {
+    const token = localStorage.getItem('nexchat_token');
+
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`);
+    }
   }
 
-  return response.json() as Promise<HealthResponse>;
+  const response = await fetch(`${API_URL}${path}`, {
+    ...fetchOptions,
+    headers,
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.message || 'Something went wrong');
+  }
+
+  return data as T;
 }
