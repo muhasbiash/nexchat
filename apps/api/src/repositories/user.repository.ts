@@ -35,6 +35,16 @@ export const findUserById = async (id: string): Promise<User | null> => {
   });
 };
 
+export const findAllUsers = async (): Promise<User[]> => {
+  return getUsersCollection()
+    .find({})
+    .project<User>({
+      passwordHash: 0,
+    })
+    .sort({ name: 1 })
+    .toArray();
+};
+
 export const createUser = async (input: CreateUserInput): Promise<User> => {
   const now = new Date();
 

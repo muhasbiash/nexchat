@@ -9,6 +9,9 @@ import { connectMongo } from './lib/mongodb.js';
 import authRoutes from './routes/auth.routes.js';
 import conversationRoutes from './routes/conversation.routes.js';
 import messageRoutes from './routes/message.routes.js';
+import userRoutes from './routes/user.routes.js';
+import { createServer } from 'node:http';
+import { initializeSocket } from './socket.js';
 
 const app = express();
 
@@ -24,8 +27,10 @@ app.use(
 app.use(express.json());
 
 app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
 app.use('/api/conversations', conversationRoutes);
 app.use('/api/messages', messageRoutes);
+
 app.get('/health', (_req, res) => {
   const response: HealthResponse = {
     status: 'ok',
@@ -46,4 +51,12 @@ async function start(): Promise<void> {
 start().catch((error) => {
   console.error('Failed to start NexChat API:', error);
   process.exit(1);
+});
+
+const httpServer = createServer(app);
+
+initializeSocket(httpServer);
+
+httpServer.listen(port, () => {
+  console.log(`API running on port ${port}`);
 });

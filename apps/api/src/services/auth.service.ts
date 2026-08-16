@@ -1,23 +1,13 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 
-import { createUser, findUserByEmail } from '../repositories/user.repository.js';
+import { createUser, findUserByEmail, findUserById } from '../repositories/user.repository.js';
 
-const jwtSecret = process.env.JWT_SECRET;
+const JWT_SECRET = process.env.JWT_SECRET || 'nexchat_dev_secret';
 
-if (!jwtSecret) {
-  throw new Error('JWT_SECRET is not defined');
-}
-
-export interface RegisterInput {
-  name: string;
+interface TokenPayload {
+  sub: string;
   email: string;
-  password: string;
-}
-
-export interface LoginInput {
-  email: string;
-  password: string;
 }
 
 export interface AuthUser {
@@ -26,13 +16,80 @@ export interface AuthUser {
   email: string;
 }
 
-const sanitizeUser = (user: {
-  _id?: { toString(): string };
-  name: string;
-  email: string;
-}): AuthUser => {
-  if (!user._id) {
-    throw new Error('User ID is missing');
+export const registerUser = async (
+  name: string,
+  email: string,
+  password: string,
+): Promise<AuthUser> => {
+  const normalizedEmail = email.trim().toLowerCase();
+
+  const existingUser = await findUserByEmail(normalizedEmail);
+
+  if (existingUser) {
+    throw new Error('Email already registered');
+  }
+
+  const passwordHash = await bcrypt.hash(password, 10);
+
+  const user = await createUser({
+    name: name.trim(),
+    email: normalizedEmail,
+    passwordHash,
+  });
+
+  return {
+    id: user._id!.toString(),
+    name: user.name,
+    email: user.email,
+  };
+};
+
+export const loginUser = async (
+  email: string,
+  password: string,
+): Promise<{ user: AuthUser; token: string }> => {
+  const normalizedEmail = email.trim().toLowerCase();
+
+  const user = await findUserByEmail(normalizedEmail);
+
+  if (!user) {
+    throw new Error('Invalid email or password');
+  }
+
+  const passwordValid = await bcrypt.compare(password, user.passwordHash);
+
+  if (!passwordValid) {
+    throw new Error('Invalid email or password');
+  }
+
+  const userId = user._id!.toString();
+
+  const token = jwt.sign(
+    {
+      sub: userId,
+      email: user.email,
+    },
+    JWT_SECRET,
+    {
+      expiresIn: '24h',
+    },
+  );
+
+  return {
+    user: {
+      id: userId,
+      name: user.name,
+      email: user.email,
+    },
+    token,
+  };
+};
+
+export const getCurrentUser = async (userId: string): Promise<AuthUser | null> => {
+  const user = await findUserById(userId);
+
+  if (!user || !user._id) {
+    return null;
   }
 
   return {
@@ -42,58 +99,20 @@ const sanitizeUser = (user: {
   };
 };
 
-export const register = async (input: RegisterInput): Promise<AuthUser> => {
-  const email = input.email.trim().toLowerCase();
+export const verifyToken = (token: string): TokenPayload => {
+  const decoded = jwt.verify(token, JWT_SECRET);
 
-  const existingUser = await findUserByEmail(email);
-
-  if (existingUser) {
-    throw new Error('Email already registered');
+  if (
+    typeof decoded !== 'object' ||
+    decoded === null ||
+    typeof decoded.sub !== 'string' ||
+    typeof decoded.email !== 'string'
+  ) {
+    throw new Error('Invalid token payload');
   }
-
-  const passwordHash = await bcrypt.hash(input.password, 12);
-
-  const user = await createUser({
-    name: input.name.trim(),
-    email,
-    passwordHash,
-  });
-
-  return sanitizeUser(user);
-};
-
-export const login = async (input: LoginInput): Promise<{ user: AuthUser; token: string }> => {
-  const email = input.email.trim().toLowerCase();
-
-  const user = await findUserByEmail(email);
-
-  if (!user) {
-    throw new Error('Invalid email or password');
-  }
-
-  const passwordMatches = await bcrypt.compare(input.password, user.passwordHash);
-
-  if (!passwordMatches) {
-    throw new Error('Invalid email or password');
-  }
-
-  if (!user._id) {
-    throw new Error('User ID is missing');
-  }
-
-  const token = jwt.sign(
-    {
-      sub: user._id.toString(),
-      email: user.email,
-    },
-    jwtSecret,
-    {
-      expiresIn: '1d',
-    },
-  );
 
   return {
-    user: sanitizeUser(user),
-    token,
+    sub: decoded.sub,
+    email: decoded.email,
   };
 };

@@ -1,21 +1,32 @@
 import { useEffect, useState } from 'react';
 
-import { getConversations, getMessages, sendMessage } from '../lib/api';
+import { useAuth } from '../hooks/use-auth';
+import {
+  createDirectConversation,
+  getConversations,
+  getMessages,
+  getUsers,
+  sendMessage,
+  type ApiUser,
+} from '../lib/api';
 import type { Conversation } from '../types/conversation';
 import type { Message } from '../types/message';
-import { useAuth } from '../hooks/use-auth';
 
 export function ChatPage() {
   const { user, logout } = useAuth();
 
+  const [users, setUsers] = useState<ApiUser[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
+  const [selectedUser, setSelectedUser] = useState<ApiUser | null>(null);
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [content, setContent] = useState('');
 
+  const [loadingUsers, setLoadingUsers] = useState(true);
   const [loadingConversations, setLoadingConversations] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
+  const [creatingConversation, setCreatingConversation] = useState(false);
   const [sending, setSending] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
@@ -23,75 +34,78 @@ export function ChatPage() {
   useEffect(() => {
     let mounted = true;
 
-    const loadConversations = async () => {
+    const loadData = async () => {
       try {
         setError(null);
 
-        const data = await getConversations();
+        const [loadedUsers, loadedConversations] = await Promise.all([
+          getUsers(),
+          getConversations(),
+        ]);
 
         if (!mounted) {
           return;
         }
 
-        setConversations(data);
-
-        if (data.length > 0) {
-          setSelectedConversation(data[0]);
-        }
+        setUsers(loadedUsers.filter((item) => item.id !== user?.id));
+        setConversations(loadedConversations);
       } catch (err) {
         if (!mounted) {
           return;
         }
 
-        setError(err instanceof Error ? err.message : 'Failed to load conversations');
+        setError(err instanceof Error ? err.message : 'Failed to load chat data');
       } finally {
         if (mounted) {
+          setLoadingUsers(false);
           setLoadingConversations(false);
         }
       }
     };
 
-    void loadConversations();
+    void loadData();
 
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [user?.id]);
 
-  useEffect(() => {
-    if (!selectedConversation) {
+  const openConversation = async (selectedUser: ApiUser) => {
+    if (creatingConversation) {
       return;
     }
 
-    let mounted = true;
+    try {
+      setCreatingConversation(true);
+      setError(null);
+      setSelectedUser(selectedUser);
 
-    const loadMessages = async () => {
-      try {
-        setLoadingMessages(true);
-        setError(null);
+      const conversation = await createDirectConversation(selectedUser.id);
 
-        const data = await getMessages(selectedConversation._id);
+      setSelectedConversation(conversation);
 
-        if (mounted) {
-          setMessages(data);
+      setConversations((current) => {
+        const exists = current.some((item) => item._id === conversation._id);
+
+        if (exists) {
+          return current;
         }
-      } catch (err) {
-        if (mounted) {
-          setError(err instanceof Error ? err.message : 'Failed to load messages');
-        }
-      } finally {
-        if (mounted) {
-          setLoadingMessages(false);
-        }
-      }
-    };
 
-    void loadMessages();
+        return [...current, conversation];
+      });
 
-    return () => {
-      mounted = false;
-    };
-  }, [selectedConversation]);
+      setLoadingMessages(true);
+
+      const loadedMessages = await getMessages(conversation._id);
+
+      setMessages(loadedMessages);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to open conversation');
+    } finally {
+      setCreatingConversation(false);
+      setLoadingMessages(false);
+    }
+  };
 
   const handleSendMessage = async () => {
     const trimmedContent = content.trim();
@@ -120,7 +134,7 @@ export function ChatPage() {
     void handleSendMessage();
   };
 
-  const getParticipantId = (conversation: Conversation): string | null => {
+  const getOtherParticipantId = (conversation: Conversation): string | null => {
     if (!user) {
       return null;
     }
@@ -128,11 +142,22 @@ export function ChatPage() {
     return conversation.participants.find((participantId) => participantId !== user.id) ?? null;
   };
 
+  const getConversationUser = (conversation: Conversation): ApiUser | null => {
+    const participantId = getOtherParticipantId(conversation);
+
+    if (!participantId) {
+      return null;
+    }
+
+    return users.find((item) => item.id === participantId) ?? null;
+  };
+
   return (
     <div className="chat-page">
       <header className="chat-header">
         <div>
           <h1>NexChat</h1>
+
           <p>
             Logged in as <strong>{user?.name}</strong>
           </p>
@@ -146,6 +171,30 @@ export function ChatPage() {
       <div className="chat-layout">
         <aside className="conversation-sidebar">
           <div className="conversation-sidebar-header">
+            <h2>New Conversation</h2>
+          </div>
+
+          {loadingUsers && <p>Loading users...</p>}
+
+          {!loadingUsers && users.length === 0 && <p>No other users found.</p>}
+
+          {users.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={
+                selectedUser?.id === item.id ? 'conversation-item active' : 'conversation-item'
+              }
+              onClick={() => void openConversation(item)}
+              disabled={creatingConversation}
+            >
+              <strong>{item.name}</strong>
+
+              <span>{item.email}</span>
+            </button>
+          ))}
+
+          <div className="conversation-sidebar-header">
             <h2>Conversations</h2>
           </div>
 
@@ -154,7 +203,7 @@ export function ChatPage() {
           {!loadingConversations && conversations.length === 0 && <p>No conversations yet.</p>}
 
           {conversations.map((conversation) => {
-            const participantId = getParticipantId(conversation);
+            const conversationUser = getConversationUser(conversation);
 
             return (
               <button
@@ -165,11 +214,15 @@ export function ChatPage() {
                     ? 'conversation-item active'
                     : 'conversation-item'
                 }
-                onClick={() => setSelectedConversation(conversation)}
+                onClick={() => {
+                  if (conversationUser) {
+                    void openConversation(conversationUser);
+                  }
+                }}
               >
-                <strong>Chat</strong>
+                <strong>{conversationUser?.name ?? 'Conversation'}</strong>
 
-                <span>{participantId ?? 'Unknown participant'}</span>
+                <span>{conversationUser?.email ?? conversation._id}</span>
               </button>
             );
           })}
@@ -179,22 +232,27 @@ export function ChatPage() {
           {!selectedConversation && (
             <div className="empty-chat">
               <h2>Welcome to NexChat</h2>
-              <p>Select a conversation to start chatting.</p>
+
+              <p>Select a user to start a conversation.</p>
             </div>
           )}
 
           {selectedConversation && (
             <>
               <div className="chat-window-header">
-                <h2>Conversation</h2>
+                <div>
+                  <h2>{selectedUser?.name ?? 'Conversation'}</h2>
 
-                <small>{selectedConversation._id}</small>
+                  {selectedUser && <small>{selectedUser.email}</small>}
+                </div>
               </div>
 
               <div className="message-list">
                 {loadingMessages && <p>Loading messages...</p>}
 
-                {!loadingMessages && messages.length === 0 && <p>No messages yet.</p>}
+                {!loadingMessages && messages.length === 0 && (
+                  <p>No messages yet. Start the conversation!</p>
+                )}
 
                 {messages.map((message) => {
                   const isOwnMessage = message.senderId === user?.id;

@@ -7,6 +7,20 @@ interface RequestOptions extends RequestInit {
   authenticated?: boolean;
 }
 
+export interface ApiUser {
+  id: string;
+  name: string;
+  email: string;
+}
+
+interface UsersResponse {
+  users: ApiUser[];
+}
+
+interface ConversationResponse {
+  conversation: Conversation;
+}
+
 export async function api<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { authenticated = false, ...fetchOptions } = options;
 
@@ -36,12 +50,29 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   return data as T;
 }
 
+export async function getUsers(): Promise<ApiUser[]> {
+  const data = await api<UsersResponse>('/api/users', {
+    authenticated: true,
+  });
+
+  return data.users;
+}
+
 export async function getConversations(): Promise<Conversation[]> {
   const data = await api<ConversationsResponse>('/api/conversations', {
     authenticated: true,
   });
 
   return data.conversations;
+}
+
+export async function createDirectConversation(participantId: string): Promise<Conversation> {
+  const data = await api<ConversationResponse>(`/api/conversations/direct/${participantId}`, {
+    method: 'POST',
+    authenticated: true,
+  });
+
+  return data.conversation;
 }
 
 export async function getMessages(conversationId: string): Promise<Message[]> {

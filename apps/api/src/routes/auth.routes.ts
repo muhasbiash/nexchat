@@ -1,8 +1,7 @@
 import { Router, type Router as ExpressRouter } from 'express';
 
+import { getCurrentUser, loginUser, registerUser } from '../services/auth.service.js';
 import { requireAuth, type AuthenticatedRequest } from '../middleware/auth.middleware.js';
-import { findUserById } from '../repositories/user.repository.js';
-import { login, register } from '../services/auth.service.js';
 
 const router: ExpressRouter = Router();
 
@@ -16,17 +15,7 @@ router.post('/register', async (req, res) => {
       });
     }
 
-    if (password.length < 8) {
-      return res.status(400).json({
-        message: 'Password must be at least 8 characters',
-      });
-    }
-
-    const user = await register({
-      name,
-      email,
-      password,
-    });
+    const user = await registerUser(name, email, password);
 
     return res.status(201).json({
       user,
@@ -56,10 +45,7 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    const result = await login({
-      email,
-      password,
-    });
+    const result = await loginUser(email, password);
 
     return res.json(result);
   } catch (error) {
@@ -85,7 +71,7 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res) => {
       });
     }
 
-    const user = await findUserById(req.userId);
+    const user = await getCurrentUser(req.userId);
 
     if (!user) {
       return res.status(404).json({
@@ -94,11 +80,7 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res) => {
     }
 
     return res.json({
-      user: {
-        id: user._id?.toString(),
-        name: user.name,
-        email: user.email,
-      },
+      user,
     });
   } catch (error) {
     console.error('Get current user error:', error);
