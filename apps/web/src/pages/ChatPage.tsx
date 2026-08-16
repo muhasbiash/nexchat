@@ -1,17 +1,12 @@
 import { useEffect, useState } from 'react';
 
-import {
-  createDirectConversation,
-  getConversations,
-  getMessages,
-  getUsers,
-  sendMessage,
-} from '../lib/api';
+import { createDirectConversation, getConversations, getMessages, getUsers } from '../lib/api';
 import { connectSocket, disconnectSocket, getSocket } from '../lib/socket';
 import { useAuth } from '../hooks/use-auth';
 import type { Conversation } from '../types/conversation';
 import type { Message } from '../types/message';
 import type { ApiUser } from '../types/user';
+
 export function ChatPage() {
   const { user, logout } = useAuth();
 
@@ -22,6 +17,7 @@ export function ChatPage() {
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [content, setContent] = useState('');
+
   const [socketConnected, setSocketConnected] = useState(false);
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [loadingConversations, setLoadingConversations] = useState(true);
@@ -31,6 +27,9 @@ export function ChatPage() {
 
   const [error, setError] = useState<string | null>(null);
 
+  /**
+   * Load users and conversations.
+   */
   useEffect(() => {
     let mounted = true;
 
@@ -70,6 +69,9 @@ export function ChatPage() {
     };
   }, [user?.id]);
 
+  /**
+   * Connect Socket.IO and listen for realtime messages.
+   */
   useEffect(() => {
     const token = localStorage.getItem('nexchat_token');
 
@@ -87,9 +89,16 @@ export function ChatPage() {
       setSocketConnected(false);
     };
 
+    const handleConnectError = (socketError: Error) => {
+      console.error('Socket connection error:', socketError);
+      setSocketConnected(false);
+    };
+
     const handleNewMessage = (message: Message) => {
       setMessages((currentMessages) => {
-        if (currentMessages.some((item) => item._id === message._id)) {
+        const alreadyExists = currentMessages.some((item) => item._id === message._id);
+
+        if (alreadyExists) {
           return currentMessages;
         }
 
@@ -99,16 +108,51 @@ export function ChatPage() {
 
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
+    socket.on('connect_error', handleConnectError);
     socket.on('new_message', handleNewMessage);
 
     return () => {
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
+      socket.off('connect_error', handleConnectError);
       socket.off('new_message', handleNewMessage);
+
       disconnectSocket();
+      setSocketConnected(false);
     };
   }, []);
 
+  /**
+   * Join selected conversation room.
+   */
+  useEffect(() => {
+    const socket = getSocket();
+
+    if (!selectedConversation) {
+      return;
+    }
+
+    const conversationId = selectedConversation._id;
+
+    if (socket.connected) {
+      socket.emit('join_conversation', conversationId);
+    }
+
+    const handleConnect = () => {
+      socket.emit('join_conversation', conversationId);
+    };
+
+    socket.on('connect', handleConnect);
+
+    return () => {
+      socket.emit('leave_conversation', conversationId);
+      socket.off('connect', handleConnect);
+    };
+  }, [selectedConversation]);
+
+  /**
+   * Open conversation and load message history.
+   */
   const openConversation = async (selectedUser: ApiUser) => {
     if (creatingConversation) {
       return;
@@ -122,10 +166,6 @@ export function ChatPage() {
       const conversation = await createDirectConversation(selectedUser.id);
 
       setSelectedConversation(conversation);
-
-      const socket = getSocket();
-
-      socket.emit('join_conversation', conversation._id);
 
       setConversations((current) => {
         const exists = current.some((item) => item._id === conversation._id);
@@ -150,6 +190,9 @@ export function ChatPage() {
     }
   };
 
+  /**
+   * Send message through Socket.IO.
+   */
   const handleSendMessage = async () => {
     const trimmedContent = content.trim();
 
@@ -157,17 +200,37 @@ export function ChatPage() {
       return;
     }
 
+    const socket = getSocket();
+
+    if (!socket.connected) {
+      setError('Socket is not connected. Please try again.');
+      return;
+    }
+
     try {
       setSending(true);
       setError(null);
 
-      const message = await sendMessage(selectedConversation._id, trimmedContent);
+      socket.emit(
+        'send_message',
+        {
+          conversationId: selectedConversation._id,
+          content: trimmedContent,
+        },
+        (response: { success: boolean; message?: Message; error?: string }) => {
+          if (!response.success) {
+            setError(response.error ?? 'Failed to send message');
+            setSending(false);
+            return;
+          }
 
-      setMessages((currentMessages) => [...currentMessages, message]);
-      setContent('');
+          setContent('');
+          setSending(false);
+        },
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to send message');
-    } finally {
+
       setSending(false);
     }
   };
@@ -323,10 +386,10 @@ export function ChatPage() {
                   value={content}
                   onChange={(event) => setContent(event.target.value)}
                   placeholder="Type a message..."
-                  disabled={sending}
+                  disabled={sending || !socketConnected}
                 />
 
-                <button type="submit" disabled={!content.trim() || sending}>
+                <button type="submit" disabled={!content.trim() || sending || !socketConnected}>
                   {sending ? 'Sending...' : 'Send'}
                 </button>
               </form>
