@@ -1,17 +1,17 @@
 import { useEffect, useState } from 'react';
 
-import { useAuth } from '../hooks/use-auth';
 import {
   createDirectConversation,
   getConversations,
   getMessages,
   getUsers,
   sendMessage,
-  type ApiUser,
 } from '../lib/api';
+import { connectSocket, disconnectSocket, getSocket } from '../lib/socket';
+import { useAuth } from '../hooks/use-auth';
 import type { Conversation } from '../types/conversation';
 import type { Message } from '../types/message';
-
+import type { ApiUser } from '../types/user';
 export function ChatPage() {
   const { user, logout } = useAuth();
 
@@ -22,7 +22,7 @@ export function ChatPage() {
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [content, setContent] = useState('');
-
+  const [socketConnected, setSocketConnected] = useState(false);
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [loadingConversations, setLoadingConversations] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
@@ -70,6 +70,45 @@ export function ChatPage() {
     };
   }, [user?.id]);
 
+  useEffect(() => {
+    const token = localStorage.getItem('nexchat_token');
+
+    if (!token) {
+      return;
+    }
+
+    const socket = connectSocket(token);
+
+    const handleConnect = () => {
+      setSocketConnected(true);
+    };
+
+    const handleDisconnect = () => {
+      setSocketConnected(false);
+    };
+
+    const handleNewMessage = (message: Message) => {
+      setMessages((currentMessages) => {
+        if (currentMessages.some((item) => item._id === message._id)) {
+          return currentMessages;
+        }
+
+        return [...currentMessages, message];
+      });
+    };
+
+    socket.on('connect', handleConnect);
+    socket.on('disconnect', handleDisconnect);
+    socket.on('new_message', handleNewMessage);
+
+    return () => {
+      socket.off('connect', handleConnect);
+      socket.off('disconnect', handleDisconnect);
+      socket.off('new_message', handleNewMessage);
+      disconnectSocket();
+    };
+  }, []);
+
   const openConversation = async (selectedUser: ApiUser) => {
     if (creatingConversation) {
       return;
@@ -83,6 +122,10 @@ export function ChatPage() {
       const conversation = await createDirectConversation(selectedUser.id);
 
       setSelectedConversation(conversation);
+
+      const socket = getSocket();
+
+      socket.emit('join_conversation', conversation._id);
 
       setConversations((current) => {
         const exists = current.some((item) => item._id === conversation._id);
@@ -161,6 +204,8 @@ export function ChatPage() {
           <p>
             Logged in as <strong>{user?.name}</strong>
           </p>
+
+          <small>{socketConnected ? '🟢 Realtime connected' : '🔴 Realtime disconnected'}</small>
         </div>
 
         <button type="button" onClick={logout}>

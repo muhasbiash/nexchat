@@ -1,20 +1,11 @@
 import type { Conversation, ConversationsResponse } from '../types/conversation';
 import type { Message, MessagesResponse } from '../types/message';
+import type { ApiUser, UsersResponse } from '../types/user';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 interface RequestOptions extends RequestInit {
   authenticated?: boolean;
-}
-
-export interface ApiUser {
-  id: string;
-  name: string;
-  email: string;
-}
-
-interface UsersResponse {
-  users: ApiUser[];
 }
 
 interface ConversationResponse {
