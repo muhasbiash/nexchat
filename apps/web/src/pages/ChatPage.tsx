@@ -1,5 +1,4 @@
-import { useEffect, useState } from 'react';
-
+import { useCallback, useEffect, useState } from 'react';
 import { createDirectConversation, getConversations, getMessages, getUsers } from '../lib/api';
 import { connectSocket, disconnectSocket, getSocket } from '../lib/socket';
 import { useAuth } from '../hooks/use-auth';
@@ -19,6 +18,7 @@ export function ChatPage() {
   const [content, setContent] = useState('');
 
   const [socketConnected, setSocketConnected] = useState(false);
+  const [typingUserId, setTypingUserId] = useState<string | null>(null);
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [loadingConversations, setLoadingConversations] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
@@ -69,6 +69,28 @@ export function ChatPage() {
     };
   }, [user?.id]);
 
+  const handleUserTyping = useCallback(
+    (data: { conversationId: string; userId: string }) => {
+      if (data.conversationId !== selectedConversation?._id) {
+        return;
+      }
+
+      setTypingUserId(data.userId);
+    },
+    [selectedConversation?._id],
+  );
+
+  const handleUserStoppedTyping = useCallback(
+    (data: { conversationId: string; userId: string }) => {
+      if (data.conversationId !== selectedConversation?._id) {
+        return;
+      }
+
+      setTypingUserId(null);
+    },
+    [selectedConversation?._id],
+  );
+  /**
   /**
    * Connect Socket.IO and listen for realtime messages.
    */
@@ -89,16 +111,9 @@ export function ChatPage() {
       setSocketConnected(false);
     };
 
-    const handleConnectError = (socketError: Error) => {
-      console.error('Socket connection error:', socketError);
-      setSocketConnected(false);
-    };
-
     const handleNewMessage = (message: Message) => {
       setMessages((currentMessages) => {
-        const alreadyExists = currentMessages.some((item) => item._id === message._id);
-
-        if (alreadyExists) {
+        if (currentMessages.some((item) => item._id === message._id)) {
           return currentMessages;
         }
 
@@ -108,48 +123,20 @@ export function ChatPage() {
 
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
-    socket.on('connect_error', handleConnectError);
     socket.on('new_message', handleNewMessage);
+    socket.on('user_typing', handleUserTyping);
+    socket.on('user_stopped_typing', handleUserStoppedTyping);
 
     return () => {
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
-      socket.off('connect_error', handleConnectError);
       socket.off('new_message', handleNewMessage);
+      socket.off('user_typing', handleUserTyping);
+      socket.off('user_stopped_typing', handleUserStoppedTyping);
 
       disconnectSocket();
-      setSocketConnected(false);
     };
-  }, []);
-
-  /**
-   * Join selected conversation room.
-   */
-  useEffect(() => {
-    const socket = getSocket();
-
-    if (!selectedConversation) {
-      return;
-    }
-
-    const conversationId = selectedConversation._id;
-
-    if (socket.connected) {
-      socket.emit('join_conversation', conversationId);
-    }
-
-    const handleConnect = () => {
-      socket.emit('join_conversation', conversationId);
-    };
-
-    socket.on('connect', handleConnect);
-
-    return () => {
-      socket.emit('leave_conversation', conversationId);
-      socket.off('connect', handleConnect);
-    };
-  }, [selectedConversation]);
-
+  }, [handleUserTyping, handleUserStoppedTyping]);
   /**
    * Open conversation and load message history.
    */
@@ -166,6 +153,9 @@ export function ChatPage() {
       const conversation = await createDirectConversation(selectedUser.id);
 
       setSelectedConversation(conversation);
+      if (socketConnected) {
+        getSocket().emit('join_conversation', conversation._id);
+      }
 
       setConversations((current) => {
         const exists = current.some((item) => item._id === conversation._id);
@@ -190,14 +180,16 @@ export function ChatPage() {
     }
   };
 
-  /**
-   * Send message through Socket.IO.
-   */
+  //  * Send message through Socket.IO.
+  //  */
   const handleSendMessage = async () => {
     const trimmedContent = content.trim();
 
     if (!selectedConversation || !trimmedContent || sending) {
       return;
+    }
+    if (socketConnected) {
+      getSocket().emit('typing_stop', selectedConversation._id);
     }
 
     const socket = getSocket();
@@ -235,6 +227,21 @@ export function ChatPage() {
     }
   };
 
+  const handleContentChange = (value: string) => {
+    setContent(value);
+
+    if (!selectedConversation || !socketConnected) {
+      return;
+    }
+
+    const socket = getSocket();
+
+    if (value.trim()) {
+      socket.emit('typing_start', selectedConversation._id);
+    } else {
+      socket.emit('typing_stop', selectedConversation._id);
+    }
+  };
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     void handleSendMessage();
@@ -378,15 +385,21 @@ export function ChatPage() {
                     </div>
                   );
                 })}
+
+                {typingUserId && (
+                  <div className="typing-indicator">
+                    <span>{selectedUser?.name ?? 'Someone'} is typing...</span>
+                  </div>
+                )}
               </div>
 
               <form className="message-form" onSubmit={handleSubmit}>
                 <input
                   type="text"
                   value={content}
-                  onChange={(event) => setContent(event.target.value)}
+                  onChange={(event) => handleContentChange(event.target.value)}
                   placeholder="Type a message..."
-                  disabled={sending || !socketConnected}
+                  disabled={sending}
                 />
 
                 <button type="submit" disabled={!content.trim() || sending || !socketConnected}>

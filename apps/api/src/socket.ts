@@ -70,6 +70,28 @@ export function initializeSocket(httpServer: HttpServer): Server {
       socket.leave(`conversation:${conversationId}`);
     });
 
+    socket.on('typing_start', (conversationId: string) => {
+      if (!conversationId || typeof conversationId !== 'string') {
+        return;
+      }
+
+      socket.to(`conversation:${conversationId}`).emit('user_typing', {
+        conversationId,
+        userId: user.id,
+      });
+    });
+
+    socket.on('typing_stop', (conversationId: string) => {
+      if (!conversationId || typeof conversationId !== 'string') {
+        return;
+      }
+
+      socket.to(`conversation:${conversationId}`).emit('user_stopped_typing', {
+        conversationId,
+        userId: user.id,
+      });
+    });
+
     socket.on(
       'send_message',
       async (
