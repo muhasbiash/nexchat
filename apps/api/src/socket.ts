@@ -13,6 +13,16 @@ interface AuthenticatedSocket {
   user: SocketUser;
 }
 
+let socketServer: Server | null = null;
+
+export function getSocketServer(): Server {
+  if (!socketServer) {
+    throw new Error('Socket.IO server is not initialized');
+  }
+
+  return socketServer;
+}
+
 export function initializeSocket(httpServer: HttpServer): Server {
   const io = new Server(httpServer, {
     cors: {
@@ -20,6 +30,8 @@ export function initializeSocket(httpServer: HttpServer): Server {
       methods: ['GET', 'POST'],
     },
   });
+
+  socketServer = io;
 
   io.use((socket, next) => {
     try {
@@ -30,10 +42,6 @@ export function initializeSocket(httpServer: HttpServer): Server {
       }
 
       const payload = verifyToken(token);
-
-      if (!payload) {
-        return next(new Error('Invalid token'));
-      }
 
       (socket.data as AuthenticatedSocket).user = {
         id: payload.sub,
@@ -51,6 +59,8 @@ export function initializeSocket(httpServer: HttpServer): Server {
     const user = authenticatedSocket.user;
 
     console.log(`Socket connected: ${user.email}`);
+
+    socket.join(`user:${user.id}`);
 
     socket.on('join_conversation', (conversationId: string) => {
       if (!conversationId || typeof conversationId !== 'string') {

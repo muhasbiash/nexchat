@@ -5,6 +5,7 @@ import {
   getOrCreateDirectConversation,
   getUserConversations,
 } from '../services/conversation.service.js';
+import { getSocketServer } from '../socket.js';
 
 const router: ExpressRouter = Router();
 
@@ -50,10 +51,16 @@ router.post('/direct/:participantId', async (req: AuthenticatedRequest, res) => 
       });
     }
 
-    const conversation = await getOrCreateDirectConversation(req.userId, participantId);
+    const result = await getOrCreateDirectConversation(req.userId, participantId);
+
+    if (result.created) {
+      const io = getSocketServer();
+
+      io.to(`user:${participantId}`).emit('new_conversation', result.conversation);
+    }
 
     return res.status(201).json({
-      conversation,
+      conversation: result.conversation,
     });
   } catch (error) {
     if (error instanceof Error && error.message === 'Cannot create conversation with yourself') {

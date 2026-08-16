@@ -94,6 +94,17 @@ export function ChatPage() {
   /**
    * Connect Socket.IO and listen for realtime messages.
    */
+
+  const handleNewConversation = useCallback((conversation: Conversation) => {
+    setConversations((currentConversations) => {
+      if (currentConversations.some((item) => item._id === conversation._id)) {
+        return currentConversations;
+      }
+
+      return [conversation, ...currentConversations];
+    });
+  }, []);
+
   useEffect(() => {
     const token = localStorage.getItem('nexchat_token');
 
@@ -126,6 +137,7 @@ export function ChatPage() {
     socket.on('new_message', handleNewMessage);
     socket.on('user_typing', handleUserTyping);
     socket.on('user_stopped_typing', handleUserStoppedTyping);
+    socket.on('new_conversation', handleNewConversation);
 
     return () => {
       socket.off('connect', handleConnect);
@@ -133,11 +145,12 @@ export function ChatPage() {
       socket.off('new_message', handleNewMessage);
       socket.off('user_typing', handleUserTyping);
       socket.off('user_stopped_typing', handleUserStoppedTyping);
-
+      socket.off('new_conversation', handleNewConversation);
       disconnectSocket();
     };
-  }, [handleUserTyping, handleUserStoppedTyping]);
-  /**
+}, [handleNewConversation, handleUserTyping, handleUserStoppedTyping]);
+
+/**
    * Open conversation and load message history.
    */
   const openConversation = async (selectedUser: ApiUser) => {

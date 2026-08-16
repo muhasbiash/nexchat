@@ -6,7 +6,15 @@ import {
   findConversationsByUserId,
 } from '../repositories/conversation.repository.js';
 
-export const getOrCreateDirectConversation = async (userId: string, participantId: string) => {
+export interface DirectConversationResult {
+  conversation: Awaited<ReturnType<typeof createConversation>>;
+  created: boolean;
+}
+
+export const getOrCreateDirectConversation = async (
+  userId: string,
+  participantId: string,
+): Promise<DirectConversationResult> => {
   if (!ObjectId.isValid(userId) || !ObjectId.isValid(participantId)) {
     throw new Error('Invalid user ID');
   }
@@ -20,13 +28,21 @@ export const getOrCreateDirectConversation = async (userId: string, participantI
   const existingConversation = await findConversationByParticipants(participants);
 
   if (existingConversation) {
-    return existingConversation;
+    return {
+      conversation: existingConversation,
+      created: false,
+    };
   }
 
-  return createConversation({
+  const conversation = await createConversation({
     type: 'direct',
     participants,
   });
+
+  return {
+    conversation,
+    created: true,
+  };
 };
 
 export const getUserConversations = async (userId: string) => {
