@@ -34,3 +34,9 @@ body {
   opacity: 0.7;
   font-style: italic;
 }
+
+.message-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}

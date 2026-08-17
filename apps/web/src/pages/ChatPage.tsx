@@ -36,9 +36,42 @@ export function ChatPage() {
    */
   const selectedConversationRef = useRef<Conversation | null>(null);
 
+  /**
+   * Reference to the message list container.
+   * Used for automatic scrolling to the newest message.
+   */
+  const messageListRef = useRef<HTMLDivElement | null>(null);
+
+  /**
+   * Keep track of the latest message for every conversation.
+   */
+  const [lastMessages, setLastMessages] = useState<Record<string, Message>>({});
+
   useEffect(() => {
     selectedConversationRef.current = selectedConversation;
   }, [selectedConversation]);
+
+  /**
+   * Automatically scroll to the latest message.
+   *
+   * requestAnimationFrame waits until React has rendered
+   * the newest message before calculating scrollHeight.
+   */
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      const container = messageListRef.current;
+
+      if (!container) {
+        return;
+      }
+
+      container.scrollTop = container.scrollHeight;
+    });
+
+    return () => {
+      cancelAnimationFrame(frame);
+    };
+  }, [messages, loadingMessages, typingUserId]);
 
   /**
    * Load users and conversations.
@@ -83,19 +116,109 @@ export function ChatPage() {
   }, [user?.id]);
 
   /**
+   * Load latest messages for existing conversations.
+   *
+   * This gives the sidebar a last-message preview when
+   * the application is initially loaded.
+   */
+  useEffect(() => {
+    if (conversations.length === 0) {
+      return;
+    }
+
+    let mounted = true;
+
+    const loadLastMessages = async () => {
+      const results = await Promise.all(
+        conversations.map(async (conversation) => {
+          if (!conversation._id) {
+            return null;
+          }
+
+          try {
+            const loadedMessages = await getMessages(conversation._id);
+
+            if (loadedMessages.length === 0) {
+              return null;
+            }
+
+            return {
+              conversationId: conversation._id,
+              message: loadedMessages[loadedMessages.length - 1],
+            };
+          } catch {
+            return null;
+          }
+        }),
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      const latest: Record<string, Message> = {};
+
+      for (const result of results) {
+        if (!result) {
+          continue;
+        }
+
+        latest[result.conversationId] = result.message;
+      }
+
+      setLastMessages(latest);
+    };
+
+    void loadLastMessages();
+
+    return () => {
+      mounted = false;
+    };
+  }, [conversations]);
+
+  /**
    * Handle incoming realtime messages.
    */
   const handleNewMessage = useCallback((message: Message) => {
-    const currentConversation = selectedConversationRef.current;
+    /**
+     * Update last message preview for the conversation.
+     */
+    setLastMessages((currentLastMessages) => ({
+      ...currentLastMessages,
+      [message.conversationId]: message,
+    }));
 
-    if (!currentConversation?._id) {
-      return;
-    }
+    /**
+     * Move the conversation receiving the new message
+     * to the top of the sidebar.
+     */
+    setConversations((currentConversations) => {
+      const conversationIndex = currentConversations.findIndex(
+        (item) => item._id === message.conversationId,
+      );
+
+      if (conversationIndex === -1) {
+        return currentConversations;
+      }
+
+      const conversation = currentConversations[conversationIndex];
+
+      return [
+        conversation,
+        ...currentConversations.filter((item) => item._id !== message.conversationId),
+      ];
+    });
+
+    const currentConversation = selectedConversationRef.current;
 
     /**
      * Only display messages belonging to the
      * currently opened conversation.
      */
+    if (!currentConversation?._id) {
+      return;
+    }
+
     if (message.conversationId !== currentConversation._id) {
       return;
     }
@@ -176,9 +299,13 @@ export function ChatPage() {
         return;
       }
 
+      if (data.userId === user?.id) {
+        return;
+      }
+
       setTypingUserId(null);
     },
-    [],
+    [user?.id],
   );
 
   /**
@@ -306,7 +433,7 @@ export function ChatPage() {
         const exists = current.some((item) => item._id === conversation._id);
 
         if (exists) {
-          return current;
+          return [conversation, ...current.filter((item) => item._id !== conversation._id)];
         }
 
         return [conversation, ...current];
@@ -317,6 +444,17 @@ export function ChatPage() {
       const loadedMessages = await getMessages(conversation._id);
 
       setMessages(loadedMessages);
+
+      /**
+       * Update sidebar last-message preview
+       * using the latest loaded message.
+       */
+      if (loadedMessages.length > 0) {
+        setLastMessages((currentLastMessages) => ({
+          ...currentLastMessages,
+          [conversation._id]: loadedMessages[loadedMessages.length - 1],
+        }));
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to open conversation');
     } finally {
@@ -420,6 +558,24 @@ export function ChatPage() {
     return users.find((item) => item.id === participantId) ?? null;
   };
 
+  const getLastMessagePreview = (conversation: Conversation): string => {
+    if (!conversation._id) {
+      return 'No messages yet';
+    }
+
+    const lastMessage = lastMessages[conversation._id];
+
+    if (!lastMessage) {
+      return 'No messages yet';
+    }
+
+    if (lastMessage.senderId === user?.id) {
+      return `You: ${lastMessage.content}`;
+    }
+
+    return lastMessage.content;
+  };
+
   return (
     <div className="chat-page">
       <header className="chat-header">
@@ -492,7 +648,7 @@ export function ChatPage() {
               >
                 <strong>{conversationUser?.name ?? 'Conversation'}</strong>
 
-                <span>{conversationUser?.email ?? conversation._id}</span>
+                <span>{getLastMessagePreview(conversation)}</span>
               </button>
             );
           })}
@@ -517,7 +673,7 @@ export function ChatPage() {
                 </div>
               </div>
 
-              <div className="message-list">
+              <div ref={messageListRef} className="message-list">
                 {loadingMessages && <p>Loading messages...</p>}
 
                 {!loadingMessages && messages.length === 0 && (
