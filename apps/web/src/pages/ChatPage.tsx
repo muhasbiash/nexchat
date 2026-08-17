@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+
 import { createDirectConversation, getConversations, getMessages, getUsers } from '../lib/api';
 import { connectSocket, disconnectSocket, getSocket } from '../lib/socket';
 import { useAuth } from '../hooks/use-auth';
@@ -19,6 +20,7 @@ export function ChatPage() {
 
   const [socketConnected, setSocketConnected] = useState(false);
   const [typingUserId, setTypingUserId] = useState<string | null>(null);
+
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [loadingConversations, setLoadingConversations] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
@@ -26,6 +28,17 @@ export function ChatPage() {
   const [sending, setSending] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
+
+  /**
+   * Keep the currently selected conversation available
+   * to Socket.IO callbacks without reconnecting the socket
+   * every time the selected conversation changes.
+   */
+  const selectedConversationRef = useRef<Conversation | null>(null);
+
+  useEffect(() => {
+    selectedConversationRef.current = selectedConversation;
+  }, [selectedConversation]);
 
   /**
    * Load users and conversations.
@@ -69,42 +82,108 @@ export function ChatPage() {
     };
   }, [user?.id]);
 
+  /**
+   * Handle incoming realtime messages.
+   */
+  const handleNewMessage = useCallback((message: Message) => {
+    const currentConversation = selectedConversationRef.current;
+
+    if (!currentConversation?._id) {
+      return;
+    }
+
+    /**
+     * Only display messages belonging to the
+     * currently opened conversation.
+     */
+    if (message.conversationId !== currentConversation._id) {
+      return;
+    }
+
+    setMessages((currentMessages) => {
+      if (currentMessages.some((item) => item._id === message._id)) {
+        return currentMessages;
+      }
+
+      return [...currentMessages, message];
+    });
+  }, []);
+
+  /**
+   * Handle new conversation realtime event.
+   */
+  const handleNewConversation = useCallback(
+    (conversation: Conversation) => {
+      if (!user) {
+        return;
+      }
+
+      /**
+       * Only add conversations where the current user
+       * is actually a participant.
+       */
+      if (!conversation.participants.includes(user.id)) {
+        return;
+      }
+
+      setConversations((currentConversations) => {
+        if (currentConversations.some((item) => item._id === conversation._id)) {
+          return currentConversations;
+        }
+
+        return [conversation, ...currentConversations];
+      });
+    },
+    [user],
+  );
+
+  /**
+   * Handle typing event.
+   */
   const handleUserTyping = useCallback(
     (data: { conversationId: string; userId: string }) => {
-      if (data.conversationId !== selectedConversation?._id) {
+      const currentConversation = selectedConversationRef.current;
+
+      if (!currentConversation?._id) {
+        return;
+      }
+
+      if (data.conversationId !== currentConversation._id) {
+        return;
+      }
+
+      if (data.userId === user?.id) {
         return;
       }
 
       setTypingUserId(data.userId);
     },
-    [selectedConversation?._id],
+    [user?.id],
   );
 
+  /**
+   * Handle stopped typing event.
+   */
   const handleUserStoppedTyping = useCallback(
     (data: { conversationId: string; userId: string }) => {
-      if (data.conversationId !== selectedConversation?._id) {
+      const currentConversation = selectedConversationRef.current;
+
+      if (!currentConversation?._id) {
+        return;
+      }
+
+      if (data.conversationId !== currentConversation._id) {
         return;
       }
 
       setTypingUserId(null);
     },
-    [selectedConversation?._id],
+    [],
   );
+
   /**
-  /**
-   * Connect Socket.IO and listen for realtime messages.
+   * Connect Socket.IO once when ChatPage mounts.
    */
-
-  const handleNewConversation = useCallback((conversation: Conversation) => {
-    setConversations((currentConversations) => {
-      if (currentConversations.some((item) => item._id === conversation._id)) {
-        return currentConversations;
-      }
-
-      return [conversation, ...currentConversations];
-    });
-  }, []);
-
   useEffect(() => {
     const token = localStorage.getItem('nexchat_token');
 
@@ -114,43 +193,96 @@ export function ChatPage() {
 
     const socket = connectSocket(token);
 
-    const handleConnect = () => {
+    const joinCurrentConversation = () => {
+      const currentConversation = selectedConversationRef.current;
+
       setSocketConnected(true);
+
+      if (currentConversation?._id) {
+        socket.emit('join_conversation', currentConversation._id);
+
+        console.log('[Socket] Joined conversation:', currentConversation._id);
+      }
     };
 
-    const handleDisconnect = () => {
+    const handleConnect = () => {
+      console.log('[Socket] Connected:', socket.id);
+
+      joinCurrentConversation();
+    };
+
+    const handleDisconnect = (reason: string) => {
+      console.log('[Socket] Disconnected:', reason);
+
       setSocketConnected(false);
+      setTypingUserId(null);
     };
 
-    const handleNewMessage = (message: Message) => {
-      setMessages((currentMessages) => {
-        if (currentMessages.some((item) => item._id === message._id)) {
-          return currentMessages;
-        }
+    const handleConnectError = (err: Error) => {
+      console.error('[Socket] Connection error:', err.message);
 
-        return [...currentMessages, message];
-      });
+      setSocketConnected(false);
+      setError(`Realtime connection failed: ${err.message}`);
     };
 
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
+    socket.on('connect_error', handleConnectError);
+
     socket.on('new_message', handleNewMessage);
     socket.on('user_typing', handleUserTyping);
     socket.on('user_stopped_typing', handleUserStoppedTyping);
     socket.on('new_conversation', handleNewConversation);
 
+    /**
+     * If the socket was already connected before
+     * the listener was registered.
+     */
+    if (socket.connected) {
+      joinCurrentConversation();
+    }
+
     return () => {
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
+      socket.off('connect_error', handleConnectError);
+
       socket.off('new_message', handleNewMessage);
       socket.off('user_typing', handleUserTyping);
       socket.off('user_stopped_typing', handleUserStoppedTyping);
       socket.off('new_conversation', handleNewConversation);
+
       disconnectSocket();
     };
-}, [handleNewConversation, handleUserTyping, handleUserStoppedTyping]);
+  }, [handleNewConversation, handleNewMessage, handleUserStoppedTyping, handleUserTyping]);
 
-/**
+  /**
+   * Join the selected conversation whenever
+   * the selected conversation changes.
+   */
+  useEffect(() => {
+    const socket = getSocket();
+
+    if (!socketConnected || !socket.connected) {
+      return;
+    }
+
+    if (!selectedConversation?._id) {
+      return;
+    }
+
+    socket.emit('join_conversation', selectedConversation._id);
+
+    console.log('[Socket] Joined selected conversation:', selectedConversation._id);
+
+    return () => {
+      socket.emit('leave_conversation', selectedConversation._id);
+
+      console.log('[Socket] Left conversation:', selectedConversation._id);
+    };
+  }, [selectedConversation?._id, socketConnected]);
+
+  /**
    * Open conversation and load message history.
    */
   const openConversation = async (selectedUser: ApiUser) => {
@@ -161,14 +293,14 @@ export function ChatPage() {
     try {
       setCreatingConversation(true);
       setError(null);
+      setTypingUserId(null);
+      setMessages([]);
+
       setSelectedUser(selectedUser);
 
       const conversation = await createDirectConversation(selectedUser.id);
 
       setSelectedConversation(conversation);
-      if (socketConnected) {
-        getSocket().emit('join_conversation', conversation._id);
-      }
 
       setConversations((current) => {
         const exists = current.some((item) => item._id === conversation._id);
@@ -177,7 +309,7 @@ export function ChatPage() {
           return current;
         }
 
-        return [...current, conversation];
+        return [conversation, ...current];
       });
 
       setLoadingMessages(true);
@@ -193,16 +325,14 @@ export function ChatPage() {
     }
   };
 
-  //  * Send message through Socket.IO.
-  //  */
+  /**
+   * Send message through Socket.IO.
+   */
   const handleSendMessage = async () => {
     const trimmedContent = content.trim();
 
-    if (!selectedConversation || !trimmedContent || sending) {
+    if (!selectedConversation || !trimmedContent || sending || !socketConnected) {
       return;
-    }
-    if (socketConnected) {
-      getSocket().emit('typing_stop', selectedConversation._id);
     }
 
     const socket = getSocket();
@@ -215,6 +345,8 @@ export function ChatPage() {
     try {
       setSending(true);
       setError(null);
+
+      socket.emit('typing_stop', selectedConversation._id);
 
       socket.emit(
         'send_message',
@@ -230,6 +362,7 @@ export function ChatPage() {
           }
 
           setContent('');
+          setTypingUserId(null);
           setSending(false);
         },
       );
@@ -240,6 +373,9 @@ export function ChatPage() {
     }
   };
 
+  /**
+   * Handle input + typing indicator.
+   */
   const handleContentChange = (value: string) => {
     setContent(value);
 
@@ -249,14 +385,20 @@ export function ChatPage() {
 
     const socket = getSocket();
 
+    if (!socket.connected) {
+      return;
+    }
+
     if (value.trim()) {
       socket.emit('typing_start', selectedConversation._id);
     } else {
       socket.emit('typing_stop', selectedConversation._id);
     }
   };
+
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+
     void handleSendMessage();
   };
 
