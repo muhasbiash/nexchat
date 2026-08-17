@@ -1,0 +1,41 @@
+<svg
+  width="64"
+  height="64"
+  viewBox="0 0 64 64"
+  fill="none"
+  xmlns="http://www.w3.org/2000/svg"
+>
+  <defs>
+    <linearGradient
+      id="gradient"
+      x1="8"
+      y1="8"
+      x2="56"
+      y2="58"
+      gradientUnits="userSpaceOnUse"
+    >
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="45%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#8b5cf6"/>
+    </linearGradient>
+  </defs>
+
+  <path
+    d="M32 5C17.088 5 5 15.745 5 29C5 42.255 17.088 53 32 53C35.93 53 39.67 52.24 43.02 50.87L52.5 57L51.2 47.02C56.05 42.56 59 36.25 59 29C59 15.745 46.912 5 32 5Z"
+    fill="url(#gradient)"
+  />
+
+  <path
+    d="M20 39V20H24.5L39.5 32.5V20H44V39H39.7L24.5 26.35V39H20Z"
+    fill="white"
+  />
+
+  <circle
+    cx="51"
+    cy="13"
+    r="5"
+    fill="#22c55e"
+    stroke="white"
+    stroke-width="2"
+  />
+</svg>
