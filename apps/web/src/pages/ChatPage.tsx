@@ -7,6 +7,7 @@ import type { Conversation } from '../types/conversation';
 import type { Message } from '../types/message';
 import type { ApiUser } from '../types/user';
 import { NexChatLogo } from '../components/nexchat-logo';
+import { ArrowRight, LoaderCircle } from 'lucide-react';
 
 export function ChatPage() {
   const { user, logout } = useAuth();
@@ -829,8 +830,25 @@ export function ChatPage() {
                   disabled={sending}
                 />
 
-                <button type="submit" disabled={!content.trim() || sending || !socketConnected}>
-                  {sending ? 'Sending...' : 'Send'}
+                <button
+                  type="submit"
+                  className="message-send"
+                  disabled={!content.trim() || sending || !socketConnected}
+                  aria-label={sending ? 'Sending message' : 'Send message'}
+                  title={sending ? 'Sending...' : 'Send message'}
+                >
+                  {sending ? (
+                    <LoaderCircle
+                      className="message-send-spinner"
+                      size={15}
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    <ArrowRight
+                      size={15}
+                      aria-hidden="true"
+                    />
+                  )}
                 </button>
               </form>
             </>
