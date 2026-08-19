@@ -38,12 +38,7 @@ function App() {
     return <RegisterPage onLogin={() => setPage('login')} />;
   }
 
-  return (
-    <HomePage
-      onLogin={() => setPage('login')}
-      onRegister={() => setPage('register')}
-    />
-  );
+  return <HomePage onLogin={() => setPage('login')} onRegister={() => setPage('register')} />;
 }
 
 export default App;

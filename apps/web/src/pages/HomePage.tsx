@@ -79,8 +79,8 @@ export function HomePage({ onLogin, onRegister }: HomePageProps) {
           </h1>
 
           <p className="hero-description">
-            NexChat is a modern real-time messaging experience designed to keep
-            conversations fast, simple, and connected.
+            NexChat is a modern real-time messaging experience designed to keep conversations fast,
+            simple, and connected.
           </p>
 
           <div className="hero-actions">

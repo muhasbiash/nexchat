@@ -1,11 +1,4 @@
-import {
-  ArrowRight,
-  Check,
-  LockKeyhole,
-  Mail,
-  MessageCircle,
-  User,
-} from 'lucide-react';
+import { ArrowRight, Check, LockKeyhole, Mail, MessageCircle, User } from 'lucide-react';
 import { useState } from 'react';
 
 import { NexChatLogo } from '../components/nexchat-logo';
@@ -46,9 +39,7 @@ export function RegisterPage({ onLogin }: RegisterPageProps) {
     try {
       await register(name.trim(), email.trim(), password);
     } catch (error) {
-      setError(
-        error instanceof Error ? error.message : 'Registration failed',
-      );
+      setError(error instanceof Error ? error.message : 'Registration failed');
     } finally {
       setLoading(false);
     }
@@ -76,9 +67,7 @@ export function RegisterPage({ onLogin }: RegisterPageProps) {
             <div>
               <h1>Create your account</h1>
 
-              <p>
-                Join NexChat and start connecting with your people.
-              </p>
+              <p>Join NexChat and start connecting with your people.</p>
             </div>
           </div>
 
@@ -139,9 +128,7 @@ export function RegisterPage({ onLogin }: RegisterPageProps) {
             </div>
 
             <div className="auth-field">
-              <label htmlFor="register-confirm-password">
-                Confirm password
-              </label>
+              <label htmlFor="register-confirm-password">Confirm password</label>
 
               <div className="auth-input-wrapper">
                 <LockKeyhole size={18} />
@@ -151,9 +138,7 @@ export function RegisterPage({ onLogin }: RegisterPageProps) {
                   type="password"
                   minLength={8}
                   value={confirmPassword}
-                  onChange={(event) =>
-                    setConfirmPassword(event.target.value)
-                  }
+                  onChange={(event) => setConfirmPassword(event.target.value)}
                   placeholder="Repeat your password"
                   autoComplete="new-password"
                   required
@@ -174,14 +159,8 @@ export function RegisterPage({ onLogin }: RegisterPageProps) {
               </div>
             )}
 
-            <button
-              type="submit"
-              className="auth-primary-button"
-              disabled={loading}
-            >
-              <span>
-                {loading ? 'Creating account...' : 'Create account'}
-              </span>
+            <button type="submit" className="auth-primary-button" disabled={loading}>
+              <span>{loading ? 'Creating account...' : 'Create account'}</span>
 
               {!loading && <ArrowRight size={18} />}
             </button>
@@ -191,11 +170,7 @@ export function RegisterPage({ onLogin }: RegisterPageProps) {
             <span>Already have an account?</span>
           </div>
 
-          <button
-            type="button"
-            className="auth-secondary-button"
-            onClick={onLogin}
-          >
+          <button type="button" className="auth-secondary-button" onClick={onLogin}>
             Sign in
           </button>
         </section>

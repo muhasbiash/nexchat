@@ -838,16 +838,9 @@ export function ChatPage() {
                   title={sending ? 'Sending...' : 'Send message'}
                 >
                   {sending ? (
-                    <LoaderCircle
-                      className="message-send-spinner"
-                      size={15}
-                      aria-hidden="true"
-                    />
+                    <LoaderCircle className="message-send-spinner" size={15} aria-hidden="true" />
                   ) : (
-                    <ArrowRight
-                      size={15}
-                      aria-hidden="true"
-                    />
+                    <ArrowRight size={15} aria-hidden="true" />
                   )}
                 </button>
               </form>

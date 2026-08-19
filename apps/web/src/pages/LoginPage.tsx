@@ -101,11 +101,7 @@ export function LoginPage({ onRegister }: LoginPageProps) {
               </div>
             )}
 
-            <button
-              type="submit"
-              className="auth-primary-button"
-              disabled={loading}
-            >
+            <button type="submit" className="auth-primary-button" disabled={loading}>
               <span>{loading ? 'Signing in...' : 'Sign in'}</span>
 
               {!loading && <ArrowRight size={18} />}
@@ -116,11 +112,7 @@ export function LoginPage({ onRegister }: LoginPageProps) {
             <span>New to NexChat?</span>
           </div>
 
-          <button
-            type="button"
-            className="auth-secondary-button"
-            onClick={onRegister}
-          >
+          <button type="button" className="auth-secondary-button" onClick={onRegister}>
             Create an account
           </button>
         </section>

@@ -5,7 +5,7 @@
   "packageManager": "pnpm@11.21.0",
   "scripts": {
     "dev": "pnpm --parallel --filter @nexchat/api --filter @nexchat/web dev",
-    "build": "pnpm --recursive build",
+    "build": "pnpm --filter @nexchat/api... build && pnpm --filter @nexchat/web build",
     "lint": "eslint .",
     "typecheck": "pnpm --recursive typecheck",
     "format": "prettier --write .",
