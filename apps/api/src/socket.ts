@@ -24,9 +24,11 @@ export function getSocketServer(): Server {
 }
 
 export function initializeSocket(httpServer: HttpServer): Server {
+  const webOrigin = process.env.WEB_ORIGIN || 'http://localhost:5173';
+
   const io = new Server(httpServer, {
     cors: {
-      origin: 'http://localhost:5173',
+      origin: webOrigin,
       methods: ['GET', 'POST'],
     },
   });
@@ -109,7 +111,11 @@ export function initializeSocket(httpServer: HttpServer): Server {
           conversationId: string;
           content: string;
         },
-        callback?: (response: { success: boolean; message?: unknown; error?: string }) => void,
+        callback?: (response: {
+          success: boolean;
+          message?: unknown;
+          error?: string;
+        }) => void,
       ) => {
         try {
           if (!payload?.conversationId || !payload?.content) {
@@ -132,9 +138,16 @@ export function initializeSocket(httpServer: HttpServer): Server {
             return;
           }
 
-          const message = await sendMessage(payload.conversationId, user.id, content);
+          const message = await sendMessage(
+            payload.conversationId,
+            user.id,
+            content,
+          );
 
-          io.to(`conversation:${payload.conversationId}`).emit('new_message', message);
+          io.to(`conversation:${payload.conversationId}`).emit(
+            'new_message',
+            message,
+          );
 
           callback?.({
             success: true,
@@ -145,7 +158,10 @@ export function initializeSocket(httpServer: HttpServer): Server {
 
           callback?.({
             success: false,
-            error: error instanceof Error ? error.message : 'Failed to send message',
+            error:
+              error instanceof Error
+                ? error.message
+                : 'Failed to send message',
           });
         }
       },
