@@ -56,3 +56,15 @@ export const findConversationsByUserId = async (userId: ObjectId): Promise<Conve
     .sort({ updatedAt: -1 })
     .toArray();
 };
+
+export const isUserInConversation = async (
+  conversationId: ObjectId,
+  userId: ObjectId,
+): Promise<boolean> => {
+  const conversation = await getConversationsCollection().findOne({
+    _id: conversationId,
+    participants: userId,
+  });
+
+  return conversation !== null;
+};

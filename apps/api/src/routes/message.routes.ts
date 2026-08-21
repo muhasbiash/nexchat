@@ -1,6 +1,7 @@
 import { Router, type Router as ExpressRouter } from 'express';
 
 import { requireAuth, type AuthenticatedRequest } from '../middleware/auth.middleware.js';
+import { verifyConversationMembership } from '../services/conversation.service.js';
 import { getConversationMessages, sendMessage } from '../services/message.service.js';
 
 const router: ExpressRouter = Router();
@@ -22,6 +23,17 @@ router.get('/:conversationId', async (req: AuthenticatedRequest, res) => {
     if (!conversationId) {
       return res.status(400).json({
         message: 'Conversation ID is required',
+      });
+    }
+
+    const isMember = await verifyConversationMembership(
+      conversationId,
+      req.userId,
+    );
+
+    if (!isMember) {
+      return res.status(403).json({
+        message: 'You are not a member of this conversation',
       });
     }
 
@@ -63,6 +75,17 @@ router.post('/:conversationId', async (req: AuthenticatedRequest, res) => {
       });
     }
 
+    const isMember = await verifyConversationMembership(
+      conversationId,
+      req.userId,
+    );
+
+    if (!isMember) {
+      return res.status(403).json({
+        message: 'You are not a member of this conversation',
+      });
+    }
+
     const { content } = req.body;
 
     if (!content) {
@@ -71,7 +94,11 @@ router.post('/:conversationId', async (req: AuthenticatedRequest, res) => {
       });
     }
 
-    const message = await sendMessage(conversationId, req.userId, content);
+    const message = await sendMessage(
+      conversationId,
+      req.userId,
+      content,
+    );
 
     return res.status(201).json({
       message,
@@ -79,7 +106,8 @@ router.post('/:conversationId', async (req: AuthenticatedRequest, res) => {
   } catch (error) {
     if (
       error instanceof Error &&
-      (error.message === 'Invalid ID' || error.message === 'Message content is required')
+      (error.message === 'Invalid ID' ||
+        error.message === 'Message content is required')
     ) {
       return res.status(400).json({
         message: error.message,

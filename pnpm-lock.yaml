@@ -145,6 +145,12 @@ importers:
 
   packages/shared: {}
 
+  scripts/socket-test:
+    dependencies:
+      socket.io-client:
+        specifier: ^4.8.3
+        version: 4.8.3(supports-color@10.2.2)
+
 packages:
 
   '@babel/code-frame@7.29.7':

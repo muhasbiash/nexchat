@@ -38,3 +38,6 @@ docker-data/
 
 # TypeScript
 *.tsbuildinfo
+
+# Cloudflare Wrangler
+.wrangler/

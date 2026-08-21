@@ -4,6 +4,7 @@ import {
   createConversation,
   findConversationByParticipants,
   findConversationsByUserId,
+  isUserInConversation,
 } from '../repositories/conversation.repository.js';
 
 export interface DirectConversationResult {
@@ -51,4 +52,18 @@ export const getUserConversations = async (userId: string) => {
   }
 
   return findConversationsByUserId(new ObjectId(userId));
+};
+
+export const verifyConversationMembership = async (
+  conversationId: string,
+  userId: string,
+): Promise<boolean> => {
+  if (!ObjectId.isValid(conversationId) || !ObjectId.isValid(userId)) {
+    return false;
+  }
+
+  return isUserInConversation(
+    new ObjectId(conversationId),
+    new ObjectId(userId),
+  );
 };

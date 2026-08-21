@@ -2,6 +2,9 @@ import { Server } from 'socket.io';
 import type { Server as HttpServer } from 'http';
 
 import { verifyToken } from './services/auth.service.js';
+import {
+  verifyConversationMembership,
+} from './services/conversation.service.js';
 import { sendMessage } from './services/message.service.js';
 
 interface SocketUser {
@@ -64,14 +67,39 @@ export function initializeSocket(httpServer: HttpServer): Server {
 
     socket.join(`user:${user.id}`);
 
-    socket.on('join_conversation', (conversationId: string) => {
+    socket.on('join_conversation', async (conversationId: string) => {
       if (!conversationId || typeof conversationId !== 'string') {
         return;
       }
 
-      socket.join(`conversation:${conversationId}`);
+      try {
+        const isMember = await verifyConversationMembership(
+          conversationId,
+          user.id,
+        );
 
-      console.log(`${user.email} joined conversation ${conversationId}`);
+        if (!isMember) {
+          socket.emit('conversation_access_denied', {
+            conversationId,
+            message: 'You are not a member of this conversation',
+          });
+
+          return;
+        }
+
+        socket.join(`conversation:${conversationId}`);
+
+        console.log(
+          `${user.email} joined conversation ${conversationId}`,
+        );
+      } catch (error) {
+        console.error('Socket join conversation error:', error);
+
+        socket.emit('conversation_access_denied', {
+          conversationId,
+          message: 'Unable to verify conversation membership',
+        });
+      }
     });
 
     socket.on('leave_conversation', (conversationId: string) => {
@@ -82,26 +110,54 @@ export function initializeSocket(httpServer: HttpServer): Server {
       socket.leave(`conversation:${conversationId}`);
     });
 
-    socket.on('typing_start', (conversationId: string) => {
+    socket.on('typing_start', async (conversationId: string) => {
       if (!conversationId || typeof conversationId !== 'string') {
         return;
       }
 
-      socket.to(`conversation:${conversationId}`).emit('user_typing', {
-        conversationId,
-        userId: user.id,
-      });
+      try {
+        const isMember = await verifyConversationMembership(
+          conversationId,
+          user.id,
+        );
+
+        if (!isMember) {
+          return;
+        }
+
+        socket.to(`conversation:${conversationId}`).emit('user_typing', {
+          conversationId,
+          userId: user.id,
+        });
+      } catch (error) {
+        console.error('Socket typing start error:', error);
+      }
     });
 
-    socket.on('typing_stop', (conversationId: string) => {
+    socket.on('typing_stop', async (conversationId: string) => {
       if (!conversationId || typeof conversationId !== 'string') {
         return;
       }
 
-      socket.to(`conversation:${conversationId}`).emit('user_stopped_typing', {
-        conversationId,
-        userId: user.id,
-      });
+      try {
+        const isMember = await verifyConversationMembership(
+          conversationId,
+          user.id,
+        );
+
+        if (!isMember) {
+          return;
+        }
+
+        socket
+          .to(`conversation:${conversationId}`)
+          .emit('user_stopped_typing', {
+            conversationId,
+            userId: user.id,
+          });
+      } catch (error) {
+        console.error('Socket typing stop error:', error);
+      }
     });
 
     socket.on(
@@ -133,6 +189,20 @@ export function initializeSocket(httpServer: HttpServer): Server {
             callback?.({
               success: false,
               error: 'Message content is required',
+            });
+
+            return;
+          }
+
+          const isMember = await verifyConversationMembership(
+            payload.conversationId,
+            user.id,
+          );
+
+          if (!isMember) {
+            callback?.({
+              success: false,
+              error: 'You are not a member of this conversation',
             });
 
             return;
