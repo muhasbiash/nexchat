@@ -67,7 +67,7 @@ export async function createDirectConversation(participantId: string): Promise<C
 }
 
 export async function getMessages(conversationId: string): Promise<Message[]> {
-  const data = await api<MessagesResponse>(`/api/messages/${conversationId}`, {
+  const data = await api<MessagesResponse>(`/api/conversations/${conversationId}/messages`, {
     authenticated: true,
   });
 
@@ -75,7 +75,7 @@ export async function getMessages(conversationId: string): Promise<Message[]> {
 }
 
 export async function sendMessage(conversationId: string, content: string): Promise<Message> {
-  const data = await api<{ message: Message }>(`/api/messages/${conversationId}`, {
+  const data = await api<{ message: Message }>(`/api/conversations/${conversationId}/messages`, {
     method: 'POST',
     authenticated: true,
     body: JSON.stringify({

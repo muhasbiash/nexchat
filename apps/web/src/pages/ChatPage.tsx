@@ -123,19 +123,19 @@ export function ChatPage() {
     const loadLastMessages = async () => {
       const results = await Promise.all(
         conversations.map(async (conversation) => {
-          if (!conversation._id) {
+          if (!conversation.id) {
             return null;
           }
 
           try {
-            const loadedMessages = await getMessages(conversation._id);
+            const loadedMessages = await getMessages(conversation.id);
 
             if (loadedMessages.length === 0) {
               return null;
             }
 
             return {
-              conversationId: conversation._id,
+              conversationId: conversation.id,
               message: loadedMessages[loadedMessages.length - 1],
             };
           } catch {
@@ -183,7 +183,7 @@ export function ChatPage() {
        */
       setConversations((currentConversations) => {
         const conversationIndex = currentConversations.findIndex(
-          (item) => item._id === message.conversationId,
+          (item) => item.id === message.conversationId,
         );
 
         if (conversationIndex === -1) {
@@ -194,7 +194,7 @@ export function ChatPage() {
 
         return [
           conversation,
-          ...currentConversations.filter((item) => item._id !== message.conversationId),
+          ...currentConversations.filter((item) => item.id !== message.conversationId),
         ];
       });
 
@@ -205,7 +205,7 @@ export function ChatPage() {
        * - message is from another user
        * - conversation is not currently opened
        */
-      if (message.senderId !== user?.id && message.conversationId !== currentConversation?._id) {
+      if (message.senderId !== user?.id && message.conversationId !== currentConversation?.id) {
         setUnreadCounts((current) => ({
           ...current,
           [message.conversationId]: (current[message.conversationId] ?? 0) + 1,
@@ -215,16 +215,16 @@ export function ChatPage() {
       /**
        * Ignore messages from other conversations.
        */
-      if (!currentConversation?._id) {
+      if (!currentConversation?.id) {
         return;
       }
 
-      if (message.conversationId !== currentConversation._id) {
+      if (message.conversationId !== currentConversation.id) {
         return;
       }
 
       setMessages((currentMessages) => {
-        if (currentMessages.some((item) => item._id === message._id)) {
+        if (currentMessages.some((item) => item.id === message.id)) {
           return currentMessages;
         }
 
@@ -243,12 +243,12 @@ export function ChatPage() {
         return;
       }
 
-      if (!conversation.participants.includes(user.id)) {
+      if (!conversation.participants.some((participant) => participant.id === user.id)) {
         return;
       }
 
       setConversations((currentConversations) => {
-        if (currentConversations.some((item) => item._id === conversation._id)) {
+        if (currentConversations.some((item) => item.id === conversation.id)) {
           return currentConversations;
         }
 
@@ -265,11 +265,11 @@ export function ChatPage() {
     (data: { conversationId: string; userId: string }) => {
       const currentConversation = selectedConversationRef.current;
 
-      if (!currentConversation?._id) {
+      if (!currentConversation?.id) {
         return;
       }
 
-      if (data.conversationId !== currentConversation._id) {
+      if (data.conversationId !== currentConversation.id) {
         return;
       }
 
@@ -289,11 +289,11 @@ export function ChatPage() {
     (data: { conversationId: string; userId: string }) => {
       const currentConversation = selectedConversationRef.current;
 
-      if (!currentConversation?._id) {
+      if (!currentConversation?.id) {
         return;
       }
 
-      if (data.conversationId !== currentConversation._id) {
+      if (data.conversationId !== currentConversation.id) {
         return;
       }
 
@@ -306,9 +306,9 @@ export function ChatPage() {
     [user?.id],
   );
 
-  /**
-   * Connect Socket.IO once when ChatPage mounts.
-   */
+/**
+ * Connect native WebSocket once when ChatPage mounts.
+ */
   useEffect(() => {
     const token = localStorage.getItem('nexchat_token');
 
@@ -316,92 +316,182 @@ export function ChatPage() {
       return;
     }
 
-    const socket = connectSocket(token);
+    const socket = connectSocket(token, (event) => {
+      switch (event.type) {
+        case 'new_message':
+          handleNewMessage(event.message);
+          break;
 
-    const joinCurrentConversation = () => {
-      const currentConversation = selectedConversationRef.current;
+        case 'new_conversation':
+          handleNewConversation(event.conversation);
+          break;
+
+        case 'user_typing':
+          handleUserTyping({
+            conversationId: event.conversationId,
+            userId: event.userId,
+          });
+          break;
+
+        case 'user_stopped_typing':
+          handleUserStoppedTyping({
+            conversationId: event.conversationId,
+            userId: event.userId,
+          });
+          break;
+
+        case 'error':
+          console.error(
+            '[WebSocket] Server error:',
+            event.message,
+          );
+
+          setError(event.message);
+          break;
+
+        case 'ack':
+          console.log(
+            '[WebSocket] ACK:',
+            event.received,
+          );
+          break;
+
+        default:
+          break;
+      }
+    });
+
+    const handleOpen = () => {
+      console.log('[WebSocket] Connected');
 
       setSocketConnected(true);
 
-      if (currentConversation?._id) {
-        socket.emit('join_conversation', currentConversation._id);
+      const currentConversation =
+        selectedConversationRef.current;
 
-        console.log('[Socket] Joined conversation:', currentConversation._id);
+      if (currentConversation?.id) {
+        socket.send(
+          JSON.stringify({
+            type: 'join_conversation',
+            conversationId: currentConversation.id,
+          }),
+        );
+
+        console.log(
+          '[WebSocket] Joined conversation:',
+          currentConversation.id,
+        );
       }
     };
 
-    const handleConnect = () => {
-      console.log('[Socket] Connected:', socket.id);
-
-      joinCurrentConversation();
-    };
-
-    const handleDisconnect = (reason: string) => {
-      console.log('[Socket] Disconnected:', reason);
+    const handleClose = (event: CloseEvent) => {
+      console.log(
+        '[WebSocket] Disconnected:',
+        event.code,
+        event.reason,
+      );
 
       setSocketConnected(false);
       setTypingUserId(null);
     };
 
-    const handleConnectError = (err: Error) => {
-      console.error('[Socket] Connection error:', err.message);
+    const handleError = () => {
+      console.error(
+        '[WebSocket] Connection error',
+      );
 
       setSocketConnected(false);
-      setError(`Realtime connection failed: ${err.message}`);
+      setError(
+        'Realtime connection failed. Please try again.',
+      );
     };
 
-    socket.on('connect', handleConnect);
-    socket.on('disconnect', handleDisconnect);
-    socket.on('connect_error', handleConnectError);
+    socket.addEventListener(
+      'open',
+      handleOpen,
+    );
 
-    socket.on('new_message', handleNewMessage);
-    socket.on('user_typing', handleUserTyping);
-    socket.on('user_stopped_typing', handleUserStoppedTyping);
-    socket.on('new_conversation', handleNewConversation);
+    socket.addEventListener(
+      'close',
+      handleClose,
+    );
 
-    if (socket.connected) {
-      joinCurrentConversation();
-    }
+    socket.addEventListener(
+      'error',
+      handleError,
+    );
 
     return () => {
-      socket.off('connect', handleConnect);
-      socket.off('disconnect', handleDisconnect);
-      socket.off('connect_error', handleConnectError);
+      socket.removeEventListener(
+        'open',
+        handleOpen,
+      );
 
-      socket.off('new_message', handleNewMessage);
-      socket.off('user_typing', handleUserTyping);
-      socket.off('user_stopped_typing', handleUserStoppedTyping);
-      socket.off('new_conversation', handleNewConversation);
+      socket.removeEventListener(
+        'close',
+        handleClose,
+      );
+
+      socket.removeEventListener(
+        'error',
+        handleError,
+      );
 
       disconnectSocket();
     };
-  }, [handleNewConversation, handleNewMessage, handleUserStoppedTyping, handleUserTyping]);
+  }, [
+    handleNewConversation,
+    handleNewMessage,
+    handleUserStoppedTyping,
+    handleUserTyping,
+  ]);
 
-  /**
-   * Join selected conversation.
-   */
+/**
+ * Join selected conversation.
+ */
   useEffect(() => {
     const socket = getSocket();
 
-    if (!socketConnected || !socket.connected) {
+    if (
+      !socketConnected ||
+      !socket ||
+      socket.readyState !== WebSocket.OPEN
+    ) {
       return;
     }
 
-    if (!selectedConversation?._id) {
+    if (!selectedConversation?.id) {
       return;
     }
 
-    socket.emit('join_conversation', selectedConversation._id);
+    socket.send(
+      JSON.stringify({
+        type: 'join_conversation',
+        conversationId: selectedConversation.id,
+      }),
+    );
 
-    console.log('[Socket] Joined selected conversation:', selectedConversation._id);
+    console.log(
+      '[WebSocket] Joined selected conversation:',
+      selectedConversation.id,
+    );
 
     return () => {
-      socket.emit('leave_conversation', selectedConversation._id);
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(
+          JSON.stringify({
+            type: 'leave_conversation',
+            conversationId: selectedConversation.id,
+          }),
+        );
 
-      console.log('[Socket] Left conversation:', selectedConversation._id);
+        console.log(
+          '[WebSocket] Left conversation:',
+          selectedConversation.id,
+        );
+      }
     };
-  }, [selectedConversation?._id, socketConnected]);
-
+  }, [selectedConversation?.id, socketConnected]);
   /**
    * Open conversation.
    */
@@ -421,13 +511,13 @@ export function ChatPage() {
       const conversation = await createDirectConversation(selectedUser.id);
 
       setUnreadCounts((current) => {
-        if (!conversation._id || !(conversation._id in current)) {
+        if (!conversation.id || !(conversation.id in current)) {
           return current;
         }
 
         const next = { ...current };
 
-        delete next[conversation._id];
+        delete next[conversation.id];
 
         return next;
       });
@@ -435,10 +525,10 @@ export function ChatPage() {
       setSelectedConversation(conversation);
 
       setConversations((current) => {
-        const exists = current.some((item) => item._id === conversation._id);
+        const exists = current.some((item) => item.id === conversation.id);
 
         if (exists) {
-          return [conversation, ...current.filter((item) => item._id !== conversation._id)];
+          return [conversation, ...current.filter((item) => item.id !== conversation.id)];
         }
 
         return [conversation, ...current];
@@ -446,14 +536,14 @@ export function ChatPage() {
 
       setLoadingMessages(true);
 
-      const loadedMessages = await getMessages(conversation._id);
+      const loadedMessages = await getMessages(conversation.id);
 
       setMessages(loadedMessages);
 
       if (loadedMessages.length > 0) {
         setLastMessages((currentLastMessages) => ({
           ...currentLastMessages,
-          [conversation._id]: loadedMessages[loadedMessages.length - 1],
+          [conversation.id]: loadedMessages[loadedMessages.length - 1],
         }));
       }
     } catch (err) {
@@ -470,15 +560,19 @@ export function ChatPage() {
   const handleSendMessage = async () => {
     const trimmedContent = content.trim();
 
-    if (!selectedConversation || !trimmedContent || sending || !socketConnected) {
+    if (
+      !selectedConversation ||
+      !trimmedContent ||
+      sending ||
+      !socketConnected
+    ) {
       return;
     }
 
     const socket = getSocket();
 
-    if (!socket.connected) {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
       setError('Socket is not connected. Please try again.');
-
       return;
     }
 
@@ -486,31 +580,30 @@ export function ChatPage() {
       setSending(true);
       setError(null);
 
-      socket.emit('typing_stop', selectedConversation._id);
-
-      socket.emit(
-        'send_message',
-        {
-          conversationId: selectedConversation._id,
-          content: trimmedContent,
-        },
-        (response: { success: boolean; message?: Message; error?: string }) => {
-          if (!response.success) {
-            setError(response.error ?? 'Failed to send message');
-
-            setSending(false);
-
-            return;
-          }
-
-          setContent('');
-          setTypingUserId(null);
-          setSending(false);
-        },
+      socket.send(
+        JSON.stringify({
+          type: 'typing_stop',
+          conversationId: selectedConversation.id,
+        }),
       );
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to send message');
 
+      socket.send(
+        JSON.stringify({
+          type: 'send_message',
+          conversationId: selectedConversation.id,
+          content: trimmedContent,
+        }),
+      );
+
+      setContent('');
+      setTypingUserId(null);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Failed to send message',
+      );
+    } finally {
       setSending(false);
     }
   };
@@ -566,15 +659,18 @@ export function ChatPage() {
 
     const socket = getSocket();
 
-    if (!socket.connected) {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
       return;
     }
 
-    if (value.trim()) {
-      socket.emit('typing_start', selectedConversation._id);
-    } else {
-      socket.emit('typing_stop', selectedConversation._id);
-    }
+    socket.send(
+      JSON.stringify({
+        type: value.trim()
+          ? 'typing_start'
+          : 'typing_stop',
+        conversationId: selectedConversation.id,
+      }),
+    );
   };
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
@@ -591,7 +687,11 @@ export function ChatPage() {
       return null;
     }
 
-    return conversation.participants.find((participantId) => participantId !== user.id) ?? null;
+    return (
+      conversation.participants.find(
+        (participant) => participant.id !== user.id,
+      )?.id ?? null
+    );
   };
 
   /**
@@ -611,11 +711,11 @@ export function ChatPage() {
    * Last message preview.
    */
   const getLastMessagePreview = (conversation: Conversation): string => {
-    if (!conversation._id) {
+    if (!conversation.id) {
       return 'No messages yet';
     }
 
-    const lastMessage = lastMessages[conversation._id];
+    const lastMessage = lastMessages[conversation.id];
 
     if (!lastMessage) {
       return 'No messages yet';
@@ -728,14 +828,14 @@ export function ChatPage() {
           {conversations.map((conversation) => {
             const conversationUser = getConversationUser(conversation);
 
-            const unreadCount = conversation._id ? (unreadCounts[conversation._id] ?? 0) : 0;
+            const unreadCount = conversation.id ? (unreadCounts[conversation.id] ?? 0) : 0;
 
             return (
               <button
-                key={conversation._id}
+                key={conversation.id}
                 type="button"
                 className={
-                  selectedConversation?._id === conversation._id
+                  selectedConversation?.id === conversation.id
                     ? 'conversation-item active'
                     : 'conversation-item'
                 }
@@ -794,7 +894,7 @@ export function ChatPage() {
 
                   return (
                     <div
-                      key={message._id}
+                      key={message.id}
                       className={isOwnMessage ? 'message own-message' : 'message'}
                     >
                       <div className="message-bubble">

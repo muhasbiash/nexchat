@@ -1,5 +1,5 @@
 export interface Message {
-  _id: string;
+  id: string;
   conversationId: string;
   senderId: string;
   content: string;

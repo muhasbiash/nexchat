@@ -1,7 +1,13 @@
+export interface ConversationParticipant {
+  id: string;
+  name: string;
+  email: string;
+}
+
 export interface Conversation {
-  _id: string;
-  type: 'direct' | 'group';
-  participants: string[];
+  id: string;
+  type: 'direct';
+  participants: ConversationParticipant[];
   createdAt: string;
   updatedAt: string;
 }

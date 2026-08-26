@@ -1,0 +1,126 @@
+import { ObjectId, type Db } from 'mongodb';
+
+import {
+  createMessage,
+  findMessagesByConversationId,
+} from '../repositories/message.repository';
+
+import {
+  isUserInConversation,
+} from '../repositories/conversation.repository';
+
+export interface MessageResponse {
+  id: string;
+  conversationId: string;
+  senderId: string;
+  content: string;
+  createdAt: Date;
+}
+
+function serializeMessage(
+  message: {
+    _id?: ObjectId;
+    conversationId: ObjectId;
+    senderId: ObjectId;
+    content: string;
+    createdAt: Date;
+  },
+): MessageResponse {
+  return {
+    id: message._id!.toString(),
+    conversationId: message.conversationId.toString(),
+    senderId: message.senderId.toString(),
+    content: message.content,
+    createdAt: message.createdAt,
+  };
+}
+
+export async function createConversationMessage(
+  db: Db,
+  conversationId: string,
+  senderId: string,
+  content: string,
+): Promise<MessageResponse> {
+  if (!ObjectId.isValid(conversationId)) {
+    throw new Error('Invalid conversation id');
+  }
+
+  if (!ObjectId.isValid(senderId)) {
+    throw new Error('Invalid sender id');
+  }
+
+  const normalizedContent = content.trim();
+
+  if (!normalizedContent) {
+    throw new Error('Message content is required');
+  }
+
+  const conversationObjectId =
+    new ObjectId(conversationId);
+
+  const senderObjectId =
+    new ObjectId(senderId);
+
+  const allowed = await isUserInConversation(
+    db,
+    conversationObjectId,
+    senderObjectId,
+  );
+
+  if (!allowed) {
+    throw new Error(
+      'User is not a member of this conversation',
+    );
+  }
+
+  const message = await createMessage(
+    db,
+    {
+      conversationId: conversationObjectId,
+      senderId: senderObjectId,
+      content: normalizedContent,
+    },
+  );
+
+  return serializeMessage(message);
+}
+
+export async function getConversationMessages(
+  db: Db,
+  conversationId: string,
+  userId: string,
+): Promise<MessageResponse[]> {
+  if (!ObjectId.isValid(conversationId)) {
+    throw new Error('Invalid conversation id');
+  }
+
+  if (!ObjectId.isValid(userId)) {
+    throw new Error('Invalid user id');
+  }
+
+  const conversationObjectId =
+    new ObjectId(conversationId);
+
+  const userObjectId =
+    new ObjectId(userId);
+
+  const allowed = await isUserInConversation(
+    db,
+    conversationObjectId,
+    userObjectId,
+  );
+
+  if (!allowed) {
+    throw new Error(
+      'User is not a member of this conversation',
+    );
+  }
+
+  const messages =
+    await findMessagesByConversationId(
+      db,
+      conversationObjectId,
+    );
+
+  return messages.map(serializeMessage);
+}
