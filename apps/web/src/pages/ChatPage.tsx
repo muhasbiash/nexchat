@@ -1,6 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-
-import { createDirectConversation, getConversations, getMessages, getUsers } from '../lib/api';
 import { connectSocket, disconnectSocket, getSocket } from '../lib/socket';
 import { useAuth } from '../hooks/use-auth';
 import type { Conversation } from '../types/conversation';
@@ -8,11 +6,24 @@ import type { Message } from '../types/message';
 import type { ApiUser } from '../types/user';
 import { NexChatLogo } from '../components/nexchat-logo';
 import { ArrowRight, LoaderCircle } from 'lucide-react';
+import {
+  acceptContactRequest,
+  createDirectConversation,
+  getConversations,
+  getIncomingContactRequests,
+  getMessages,
+  getUsers,
+  rejectContactRequest,
+  type ContactRequest,
+} from '../lib/api';
 
 export function ChatPage() {
   const { user, logout } = useAuth();
 
   const [users, setUsers] = useState<ApiUser[]>([]);
+  const [contactRequests, setContactRequests] = useState<ContactRequest[]>([]);
+  const [processingContactRequestId, setProcessingContactRequestId] =
+  useState<string | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [selectedUser, setSelectedUser] = useState<ApiUser | null>(null);
@@ -47,6 +58,7 @@ export function ChatPage() {
    * This is used for reliable automatic scrolling.
    */
   const messageEndRef = useRef<HTMLDivElement | null>(null);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     selectedConversationRef.current = selectedConversation;
@@ -78,10 +90,15 @@ export function ChatPage() {
       try {
         setError(null);
 
-        const [loadedUsers, loadedConversations] = await Promise.all([
-          getUsers(),
-          getConversations(),
-        ]);
+      const [
+        loadedUsers,
+        loadedConversations,
+        loadedContactRequests,
+      ] = await Promise.all([
+        getUsers(),
+        getConversations(),
+        getIncomingContactRequests(),
+      ]);
 
         if (!mounted) {
           return;
@@ -89,6 +106,7 @@ export function ChatPage() {
 
         setUsers(loadedUsers.filter((item) => item.id !== user?.id));
         setConversations(loadedConversations);
+        setContactRequests(loadedContactRequests);
       } catch (err) {
         if (!mounted) {
           return;
@@ -168,47 +186,93 @@ export function ChatPage() {
     };
   }, [conversations]);
 
+  useEffect(() => {
+  return () => {
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
+  };
+}, []);
+
   /**
    * Handle incoming realtime messages.
    */
   const handleNewMessage = useCallback(
     (message: Message) => {
+      console.log(
+        '[ChatPage] New message received:',
+        message,
+      );
+
+      /**
+       * Move conversation to the top.
+       */
+      setConversations((currentConversations) => {
+        const conversationIndex =
+          currentConversations.findIndex(
+            (item) =>
+              item.id === message.conversationId,
+          );
+
+        if (conversationIndex === -1) {
+          return currentConversations;
+        }
+
+        const conversation =
+          currentConversations[conversationIndex];
+
+        return [
+          conversation,
+          ...currentConversations.filter(
+            (item) =>
+              item.id !== message.conversationId,
+          ),
+        ];
+      });
+
+      const currentConversation =
+        selectedConversationRef.current;
+
+      console.log(
+        '[ChatPage] Current conversation:',
+        currentConversation?.id,
+      );
+      console.log(
+        '[ChatPage] Incoming conversation:',
+        message.conversationId,
+      );
+      console.log(
+        '[ChatPage] Current user:',
+        user?.id,
+      );
+      console.log(
+        '[ChatPage] Message sender:',
+        message.senderId,
+      );
+
+      /**
+       * Update last message preview.
+       */
       setLastMessages((currentLastMessages) => ({
         ...currentLastMessages,
         [message.conversationId]: message,
       }));
 
       /**
-       * Move conversation to the top.
-       */
-      setConversations((currentConversations) => {
-        const conversationIndex = currentConversations.findIndex(
-          (item) => item.id === message.conversationId,
-        );
-
-        if (conversationIndex === -1) {
-          return currentConversations;
-        }
-
-        const conversation = currentConversations[conversationIndex];
-
-        return [
-          conversation,
-          ...currentConversations.filter((item) => item.id !== message.conversationId),
-        ];
-      });
-
-      const currentConversation = selectedConversationRef.current;
-
-      /**
        * Increase unread count only when:
        * - message is from another user
        * - conversation is not currently opened
        */
-      if (message.senderId !== user?.id && message.conversationId !== currentConversation?.id) {
+      if (
+        message.senderId !== user?.id &&
+        message.conversationId !==
+          currentConversation?.id
+      ) {
         setUnreadCounts((current) => ({
           ...current,
-          [message.conversationId]: (current[message.conversationId] ?? 0) + 1,
+          [message.conversationId]:
+            (current[message.conversationId] ?? 0) + 1,
         }));
       }
 
@@ -219,16 +283,26 @@ export function ChatPage() {
         return;
       }
 
-      if (message.conversationId !== currentConversation.id) {
+      if (
+        message.conversationId !==
+        currentConversation.id
+      ) {
         return;
       }
 
       setMessages((currentMessages) => {
-        if (currentMessages.some((item) => item.id === message.id)) {
+        if (
+          currentMessages.some(
+            (item) => item.id === message.id,
+          )
+        ) {
           return currentMessages;
         }
 
-        return [...currentMessages, message];
+        return [
+          ...currentMessages,
+          message,
+        ];
       });
     },
     [user?.id],
@@ -239,23 +313,36 @@ export function ChatPage() {
    */
   const handleNewConversation = useCallback(
     (conversation: Conversation) => {
-      if (!user) {
+      const userId = user?.id;
+
+      if (!userId) {
         return;
       }
 
-      if (!conversation.participants.some((participant) => participant.id === user.id)) {
+      if (
+        !conversation.participants.some(
+          (participant) => participant.id === userId,
+        )
+      ) {
         return;
       }
 
       setConversations((currentConversations) => {
-        if (currentConversations.some((item) => item.id === conversation.id)) {
+        if (
+          currentConversations.some(
+            (item) => item.id === conversation.id,
+          )
+        ) {
           return currentConversations;
         }
 
-        return [conversation, ...currentConversations];
+        return [
+          conversation,
+          ...currentConversations,
+        ];
       });
     },
-    [user],
+    [user?.id],
   );
 
   /**
@@ -306,138 +393,92 @@ export function ChatPage() {
     [user?.id],
   );
 
-/**
- * Connect native WebSocket once when ChatPage mounts.
- */
+  /**
+   * Connect native WebSocket once when ChatPage mounts.
+   */
   useEffect(() => {
-    const token = localStorage.getItem('nexchat_token');
+    const token =
+      localStorage.getItem('nexchat_token');
 
     if (!token) {
       return;
     }
 
-    const socket = connectSocket(token, (event) => {
-      switch (event.type) {
-        case 'new_message':
-          handleNewMessage(event.message);
-          break;
+    const socket = connectSocket(
+      token,
+      (event) => {
+        switch (event.type) {
+          case 'new_message':
+            handleNewMessage(event.message);
+            break;
 
-        case 'new_conversation':
-          handleNewConversation(event.conversation);
-          break;
+          case 'new_conversation':
+            handleNewConversation(
+              event.conversation,
+            );
+            break;
 
-        case 'user_typing':
-          handleUserTyping({
-            conversationId: event.conversationId,
-            userId: event.userId,
-          });
-          break;
+          case 'user_typing':
+            handleUserTyping({
+              conversationId:
+                event.conversationId,
+              userId: event.userId,
+            });
+            break;
 
-        case 'user_stopped_typing':
-          handleUserStoppedTyping({
-            conversationId: event.conversationId,
-            userId: event.userId,
-          });
-          break;
+          case 'user_stopped_typing':
+            handleUserStoppedTyping({
+              conversationId:
+                event.conversationId,
+              userId: event.userId,
+            });
+            break;
 
-        case 'error':
-          console.error(
-            '[WebSocket] Server error:',
-            event.message,
-          );
+          case 'conversation_access_denied':
+            console.error(
+              '[WebSocket] Conversation access denied:',
+              event.message,
+            );
 
-          setError(event.message);
-          break;
+            setError(event.message);
+            break;
 
-        case 'ack':
-          console.log(
-            '[WebSocket] ACK:',
-            event.received,
-          );
-          break;
+          case 'error':
+            console.error(
+              '[WebSocket] Server error:',
+              event.message,
+            );
 
-        default:
-          break;
-      }
-    });
+            setError(event.message);
+            break;
 
-    const handleOpen = () => {
-      console.log('[WebSocket] Connected');
+          case 'ack':
+            console.log(
+              '[WebSocket] ACK:',
+              event.received,
+            );
+            break;
 
-      setSocketConnected(true);
+          default:
+            break;
+        }
+      },
+      () => {
+        console.log('[WebSocket] Connected');
+        setSocketConnected(true);
+      },
+      () => {
+        console.log('[WebSocket] Disconnected');
 
-      const currentConversation =
-        selectedConversationRef.current;
-
-      if (currentConversation?.id) {
-        socket.send(
-          JSON.stringify({
-            type: 'join_conversation',
-            conversationId: currentConversation.id,
-          }),
-        );
-
-        console.log(
-          '[WebSocket] Joined conversation:',
-          currentConversation.id,
-        );
-      }
-    };
-
-    const handleClose = (event: CloseEvent) => {
-      console.log(
-        '[WebSocket] Disconnected:',
-        event.code,
-        event.reason,
-      );
-
-      setSocketConnected(false);
-      setTypingUserId(null);
-    };
-
-    const handleError = () => {
-      console.error(
-        '[WebSocket] Connection error',
-      );
-
-      setSocketConnected(false);
-      setError(
-        'Realtime connection failed. Please try again.',
-      );
-    };
-
-    socket.addEventListener(
-      'open',
-      handleOpen,
-    );
-
-    socket.addEventListener(
-      'close',
-      handleClose,
-    );
-
-    socket.addEventListener(
-      'error',
-      handleError,
+        setSocketConnected(false);
+        setTypingUserId(null);
+      },
     );
 
     return () => {
-      socket.removeEventListener(
-        'open',
-        handleOpen,
-      );
-
-      socket.removeEventListener(
-        'close',
-        handleClose,
-      );
-
-      socket.removeEventListener(
-        'error',
-        handleError,
-      );
-
+      socket.close();
       disconnectSocket();
+      setSocketConnected(false);
     };
   }, [
     handleNewConversation,
@@ -446,9 +487,9 @@ export function ChatPage() {
     handleUserTyping,
   ]);
 
-/**
- * Join selected conversation.
- */
+  /**
+   * Join selected conversation.
+   */
   useEffect(() => {
     const socket = getSocket();
 
@@ -663,14 +704,47 @@ export function ChatPage() {
       return;
     }
 
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    const conversationId = selectedConversation.id;
+
+    if (!value.trim()) {
+      socket.send(
+        JSON.stringify({
+          type: 'typing_stop',
+          conversationId,
+        }),
+      );
+
+      return;
+    }
+
     socket.send(
       JSON.stringify({
-        type: value.trim()
-          ? 'typing_start'
-          : 'typing_stop',
-        conversationId: selectedConversation.id,
+        type: 'typing_start',
+        conversationId,
       }),
     );
+
+    typingTimeoutRef.current = setTimeout(() => {
+      const currentSocket = getSocket();
+
+      if (
+        currentSocket &&
+        currentSocket.readyState === WebSocket.OPEN
+      ) {
+        currentSocket.send(
+          JSON.stringify({
+            type: 'typing_stop',
+            conversationId,
+          }),
+        );
+      }
+
+      typingTimeoutRef.current = null;
+    }, 700);
   };
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
@@ -693,6 +767,62 @@ export function ChatPage() {
       )?.id ?? null
     );
   };
+
+  const handleAcceptContactRequest = async (
+  requestId: string,
+) => {
+  try {
+    setProcessingContactRequestId(requestId);
+    setError(null);
+
+    await acceptContactRequest(requestId);
+
+    setContactRequests((current) =>
+      current.filter(
+        (request) =>
+          request.id !== requestId,
+      ),
+    );
+
+    const updatedConversations =
+      await getConversations();
+
+    setConversations(updatedConversations);
+  } catch (err) {
+    setError(
+      err instanceof Error
+        ? err.message
+        : 'Failed to accept contact request',
+    );
+  } finally {
+    setProcessingContactRequestId(null);
+  }
+};
+const handleRejectContactRequest = async (
+  requestId: string,
+) => {
+  try {
+    setProcessingContactRequestId(requestId);
+    setError(null);
+
+    await rejectContactRequest(requestId);
+
+    setContactRequests((current) =>
+      current.filter(
+        (request) =>
+          request.id !== requestId,
+      ),
+    );
+  } catch (err) {
+    setError(
+      err instanceof Error
+        ? err.message
+        : 'Failed to reject contact request',
+    );
+  } finally {
+    setProcessingContactRequestId(null);
+  }
+};
 
   /**
    * Get the user associated with a conversation.
@@ -771,6 +901,85 @@ export function ChatPage() {
               aria-label="Search people and conversations"
             />
           </div>
+
+          {contactRequests.length > 0 && (
+  <>
+    <div className="conversation-sidebar-header">
+      <h2>Contact Requests</h2>
+    </div>
+
+    <div className="contact-request-list">
+      {contactRequests.map((request) => {
+      const requester = users.find(
+        (item) =>
+          item.id === request.senderId,
+      );
+
+        const isProcessing =
+          processingContactRequestId ===
+          request.id;
+
+        return (
+          <div
+            key={request.id}
+            className="contact-request-item"
+          >
+            <div className="conversation-user-row">
+              <div className="avatar">
+                {getInitials(
+                  requester?.name ??
+                    'User',
+                )}
+              </div>
+
+              <div className="conversation-user-info">
+                <strong>
+                  {requester?.name ??
+                    'Unknown user'}
+                </strong>
+
+                <span>
+                  {requester?.email ??
+                    'Contact request'}
+                </span>
+              </div>
+            </div>
+
+            <div className="contact-request-actions">
+              <button
+                type="button"
+                className="contact-accept-button"
+                disabled={isProcessing}
+                onClick={() =>
+                  void handleAcceptContactRequest(
+                    request.id,
+                  )
+                }
+              >
+                {isProcessing
+                  ? '...'
+                  : 'Accept'}
+              </button>
+
+              <button
+                type="button"
+                className="contact-reject-button"
+                disabled={isProcessing}
+                onClick={() =>
+                  void handleRejectContactRequest(
+                    request.id,
+                  )
+                }
+              >
+                Reject
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  </>
+)}
 
           <div className="conversation-sidebar-header">
             <h2>New Conversation</h2>

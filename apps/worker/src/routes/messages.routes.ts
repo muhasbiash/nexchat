@@ -54,7 +54,7 @@ export async function handleMessagesRoute(
   env: MessageEnv,
 ): Promise<Response | null> {
   const match = pathname.match(
-    /^\/api\/conversations\/([^/]+)\/messages$/,
+    /^\/api\/messages\/([^/]+)$/,
   );
 
   if (!match) {

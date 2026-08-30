@@ -1,9 +1,27 @@
 import { ObjectId } from 'mongodb';
 
-import { createMessage, findMessagesByConversationId } from '../repositories/message.repository.js';
+import {
+  createMessage,
+  findMessagesByConversationId,
+} from '../repositories/message.repository.js';
 
-export const sendMessage = async (conversationId: string, senderId: string, content: string) => {
-  if (!ObjectId.isValid(conversationId) || !ObjectId.isValid(senderId)) {
+export interface MessageResponse {
+  id: string;
+  conversationId: string;
+  senderId: string;
+  content: string;
+  createdAt: string;
+}
+
+export const sendMessage = async (
+  conversationId: string,
+  senderId: string,
+  content: string,
+): Promise<MessageResponse> => {
+  if (
+    !ObjectId.isValid(conversationId) ||
+    !ObjectId.isValid(senderId)
+  ) {
     throw new Error('Invalid ID');
   }
 
@@ -20,10 +38,14 @@ export const sendMessage = async (conversationId: string, senderId: string, cont
   });
 };
 
-export const getConversationMessages = async (conversationId: string) => {
+export const getConversationMessages = async (
+  conversationId: string,
+): Promise<MessageResponse[]> => {
   if (!ObjectId.isValid(conversationId)) {
     throw new Error('Invalid conversation ID');
   }
 
-  return findMessagesByConversationId(new ObjectId(conversationId));
+  return findMessagesByConversationId(
+    new ObjectId(conversationId),
+  );
 };

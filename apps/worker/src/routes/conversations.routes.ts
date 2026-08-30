@@ -5,6 +5,10 @@ import {
   getUserConversations,
 } from '../services/conversation.service';
 
+import {
+  areUsersContacts,
+} from '../services/contact.service';
+
 import { verifyToken } from '../lib/jwt';
 
 interface ConversationEnv {
@@ -26,9 +30,8 @@ function json(
 function getBearerToken(
   request: Request,
 ): string | null {
-  const authorization = request.headers.get(
-    'Authorization',
-  );
+  const authorization =
+    request.headers.get('Authorization');
 
   if (!authorization) {
     return null;
@@ -53,8 +56,37 @@ export async function handleConversationsRoute(
   db: Db,
   env: ConversationEnv,
 ): Promise<Response | null> {
-  if (pathname !== '/api/conversations') {
+  const directMatch = pathname.match(
+    /^\/api\/conversations\/direct\/([^/]+)$/,
+  );
+
+  const isConversationsRoute =
+    pathname === '/api/conversations';
+
+  if (
+    !isConversationsRoute &&
+    !directMatch
+  ) {
     return null;
+  }
+
+  /*
+   * Supported endpoints:
+   *
+   * GET  /api/conversations
+   * POST /api/conversations/direct/:participantId
+   */
+
+  if (
+    request.method !== 'GET' &&
+    !directMatch
+  ) {
+    return json(
+      {
+        message: 'Method not allowed',
+      },
+      405,
+    );
   }
 
   const token = getBearerToken(request);
@@ -75,7 +107,12 @@ export async function handleConversationsRoute(
       token,
       env.JWT_SECRET,
     );
-  } catch {
+  } catch (error) {
+    console.error(
+      '[Conversations] JWT verification failed:',
+      error,
+    );
+
     return json(
       {
         message: 'Authentication required',
@@ -84,46 +121,49 @@ export async function handleConversationsRoute(
     );
   }
 
-  if (request.method === 'GET') {
-    try {
-      const conversations =
-        await getUserConversations(
-          db,
-          payload.sub,
-        );
+  /*
+   * POST /api/conversations/direct/:participantId
+   *
+   * A direct conversation may only be created
+   * when the two users are already accepted contacts.
+   */
+  if (
+    request.method === 'POST' &&
+    directMatch
+  ) {
+    const participantId =
+      directMatch[1];
 
-      return json({
-        conversations,
-      });
-    } catch (error) {
-      console.error(
-        '[Conversations] List error:',
-        error,
-      );
-
+    if (!participantId) {
       return json(
         {
-          message: 'Internal server error',
+          message: 'Participant id is required',
         },
-        500,
+        400,
       );
     }
-  }
 
-  if (request.method === 'POST') {
     try {
-      const body =
-        await request.json() as {
-          participantId?: string;
-        };
+      /*
+       * Contact permission check.
+       *
+       * Both users must have an accepted
+       * contact relationship.
+       */
+      const areContacts =
+        await areUsersContacts(
+          db,
+          payload.sub,
+          participantId,
+        );
 
-      if (!body.participantId) {
+      if (!areContacts) {
         return json(
           {
             message:
-              'participantId is required',
+              'Users must be accepted contacts before starting a conversation',
           },
-          400,
+          403,
         );
       }
 
@@ -131,7 +171,7 @@ export async function handleConversationsRoute(
         await createDirectConversation(
           db,
           payload.sub,
-          body.participantId,
+          participantId,
         );
 
       return json(
@@ -178,7 +218,39 @@ export async function handleConversationsRoute(
       }
 
       console.error(
-        '[Conversations] Create error:',
+        '[Conversations] Direct create error:',
+        error,
+      );
+
+      return json(
+        {
+          message: 'Internal server error',
+        },
+        500,
+      );
+    }
+  }
+
+  /*
+   * GET /api/conversations
+   */
+  if (
+    request.method === 'GET' &&
+    pathname === '/api/conversations'
+  ) {
+    try {
+      const conversations =
+        await getUserConversations(
+          db,
+          payload.sub,
+        );
+
+      return json({
+        conversations,
+      });
+    } catch (error) {
+      console.error(
+        '[Conversations] List error:',
         error,
       );
 

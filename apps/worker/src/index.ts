@@ -5,6 +5,7 @@ import { handleAuthRoute } from './routes/auth.routes';
 import { handleUsersRoute } from './routes/users.routes';
 import { handleConversationsRoute } from './routes/conversations.routes';
 import { handleMessagesRoute } from './routes/messages.routes';
+import { handleContactsRoute } from './routes/contacts.routes';
 
 import { getMongoDb } from './lib/mongodb';
 import { verifyToken } from './lib/jwt';
@@ -34,6 +35,88 @@ interface SocketAttachment {
   userId: string;
   email: string;
   conversationIds: string[];
+  memberConversationIds: string[];
+}
+const ALLOWED_ORIGINS = new Set([
+  'http://localhost:5173',
+  'https://nexchat-coyalb0jn-muhammad-hasbi-ashidiqi-s-projects.vercel.app',
+]);
+
+function getCorsOrigin(
+  request: Request,
+): string | null {
+  const origin = request.headers.get('Origin');
+
+  if (!origin) {
+    return null;
+  }
+
+  return ALLOWED_ORIGINS.has(origin)
+    ? origin
+    : null;
+}
+
+function corsHeaders(
+  request: Request,
+): Headers {
+  const headers = new Headers();
+
+  const origin = getCorsOrigin(request);
+
+  if (origin) {
+    headers.set(
+      'Access-Control-Allow-Origin',
+      origin,
+    );
+
+    headers.set(
+      'Access-Control-Allow-Methods',
+      'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+    );
+
+    headers.set(
+      'Access-Control-Allow-Headers',
+      'Content-Type, Authorization',
+    );
+
+    headers.set(
+      'Access-Control-Max-Age',
+      '86400',
+    );
+
+    headers.set(
+      'Vary',
+      'Origin',
+    );
+  }
+
+  return headers;
+}
+
+function withCors(
+  response: Response,
+  request: Request,
+): Response {
+  const headers = new Headers(
+    response.headers,
+  );
+
+  const cors = corsHeaders(request);
+
+  cors.forEach(
+    (value, key) => {
+      headers.set(key, value);
+    },
+  );
+
+  return new Response(
+    response.body,
+    {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    },
+  );
 }
 
 function sendSocketEvent(
@@ -108,18 +191,37 @@ export class NexChatRoom extends DurableObject<Env> {
       );
     }
 
-    const webSocketPair = new WebSocketPair();
+const webSocketPair = new WebSocketPair();
 
-    const client = webSocketPair[0];
-    const server = webSocketPair[1];
+const client = webSocketPair[0];
+const server = webSocketPair[1];
 
-    this.ctx.acceptWebSocket(server);
+const db = await getMongoDb(
+  this.env.MONGO_URI,
+);
 
-    server.serializeAttachment({
-      userId: tokenPayload.sub,
-      email: tokenPayload.email,
-      conversationIds: [],
-    } satisfies SocketAttachment);
+const userConversations =
+  await getUserConversations(
+    db,
+    tokenPayload.sub,
+  );
+
+const memberConversationIds =
+  userConversations
+    .map((conversation) => conversation.id)
+    .filter(
+      (id): id is string =>
+        typeof id === 'string',
+    );
+
+this.ctx.acceptWebSocket(server);
+
+server.serializeAttachment({
+  userId: tokenPayload.sub,
+  email: tokenPayload.email,
+  conversationIds: [],
+  memberConversationIds,
+} satisfies SocketAttachment);
 
     console.log(
       '[NexChatRoom] WebSocket connected:',
@@ -151,15 +253,21 @@ export class NexChatRoom extends DurableObject<Env> {
     if (
       typeof data.userId !== 'string' ||
       typeof data.email !== 'string' ||
-      !Array.isArray(data.conversationIds)
+      !Array.isArray(data.conversationIds) ||
+      !Array.isArray(data.memberConversationIds)
     ) {
       return null;
     }
 
-    return {
-      userId: data.userId,
-      email: data.email,
-      conversationIds: data.conversationIds.filter(
+   return {
+    userId: data.userId,
+    email: data.email,
+    conversationIds: data.conversationIds.filter(
+      (id): id is string =>
+        typeof id === 'string',
+    ),
+    memberConversationIds:
+      data.memberConversationIds.filter(
         (id): id is string =>
           typeof id === 'string',
       ),
@@ -256,7 +364,7 @@ export class NexChatRoom extends DurableObject<Env> {
       }
 
       if (
-        !attachment.conversationIds.includes(
+        !attachment.memberConversationIds.includes(
           conversationId,
         )
       ) {
@@ -701,6 +809,35 @@ export default {
     const url = new URL(
       request.url,
     );
+    if (request.method === 'OPTIONS') {
+      return withCors(
+        new Response(null, {
+          status: 204,
+        }),
+        request,
+      );
+    }
+        if (
+      request.method === 'OPTIONS' &&
+      url.pathname.startsWith('/api/')
+    ) {
+      const origin =
+        getCorsOrigin(request);
+
+      if (!origin) {
+        return new Response(
+          'CORS origin not allowed',
+          {
+            status: 403,
+          },
+        );
+      }
+
+      return new Response(null, {
+        status: 204,
+        headers: corsHeaders(request),
+      });
+    }
 
     if (url.pathname === '/health') {
       return Response.json({
@@ -762,9 +899,11 @@ export default {
             db,
             env,
           );
-
         if (authResponse) {
-          return authResponse;
+          return withCors(
+            authResponse,
+            request,
+          );
         }
 
         const usersResponse =
@@ -776,7 +915,25 @@ export default {
           );
 
         if (usersResponse) {
-          return usersResponse;
+          return withCors(
+            usersResponse,
+            request,
+          );
+        }
+
+        const contactsResponse =
+          await handleContactsRoute(
+            request,
+            url.pathname,
+            db,
+            env,
+          );
+
+        if (contactsResponse) {
+          return withCors(
+            contactsResponse,
+            request,
+          );
         }
 
         const conversationsResponse =
@@ -788,7 +945,10 @@ export default {
           );
 
         if (conversationsResponse) {
-          return conversationsResponse;
+          return withCors(
+            conversationsResponse,
+            request,
+          );
         }
 
         const messagesResponse =
@@ -800,10 +960,14 @@ export default {
           );
 
         if (messagesResponse) {
-          return messagesResponse;
+          return withCors(
+            messagesResponse,
+            request,
+          );
         }
 
-        return Response.json(
+      return withCors(
+        Response.json(
           {
             message:
               'API route not found',
@@ -811,14 +975,17 @@ export default {
           {
             status: 404,
           },
-        );
+        ),
+        request,
+      );
       } catch (error) {
         console.error(
           '[Worker] API error:',
           error,
         );
 
-        return Response.json(
+      return withCors(
+        Response.json(
           {
             message:
               'Internal server error',
@@ -826,7 +993,9 @@ export default {
           {
             status: 500,
           },
-        );
+        ),
+        request,
+      );
       }
     }
 

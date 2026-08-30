@@ -20,7 +20,17 @@ const getMessagesCollection = (): Collection<Message> => {
   return getMongoDb().collection<Message>('messages');
 };
 
-export const createMessage = async (input: CreateMessageInput): Promise<Message> => {
+const serializeMessage = (message: Message) => ({
+  id: message._id?.toHexString() ?? '',
+  conversationId: message.conversationId.toHexString(),
+  senderId: message.senderId.toHexString(),
+  content: message.content,
+  createdAt: message.createdAt.toISOString(),
+});
+
+export const createMessage = async (
+  input: CreateMessageInput,
+) => {
   const message: Message = {
     conversationId: input.conversationId,
     senderId: input.senderId,
@@ -28,21 +38,25 @@ export const createMessage = async (input: CreateMessageInput): Promise<Message>
     createdAt: new Date(),
   };
 
-  const result = await getMessagesCollection().insertOne(message);
+  const result =
+    await getMessagesCollection().insertOne(message);
 
-  return {
+  return serializeMessage({
     ...message,
     _id: result.insertedId,
-  };
+  });
 };
 
 export const findMessagesByConversationId = async (
   conversationId: ObjectId,
-): Promise<Message[]> => {
-  return getMessagesCollection()
-    .find({
-      conversationId,
-    })
-    .sort({ createdAt: 1 })
-    .toArray();
+) => {
+  const messages =
+    await getMessagesCollection()
+      .find({
+        conversationId,
+      })
+      .sort({ createdAt: 1 })
+      .toArray();
+
+  return messages.map(serializeMessage);
 };

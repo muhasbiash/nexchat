@@ -2429,3 +2429,45 @@ input {
   border-color: #3b82f6;
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
+
+.contact-request-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 12px 12px;
+}
+
+.contact-request-item {
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+}
+
+.contact-request-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.contact-request-actions button {
+  flex: 1;
+  border: 0;
+  border-radius: 8px;
+  padding: 7px 10px;
+  cursor: pointer;
+}
+
+.contact-accept-button {
+  background: #22c55e;
+  color: white;
+}
+
+.contact-reject-button {
+  background: #ef4444;
+  color: white;
+}
+
+.contact-request-actions button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
