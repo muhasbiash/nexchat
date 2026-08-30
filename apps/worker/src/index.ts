@@ -39,6 +39,7 @@ interface SocketAttachment {
 }
 const ALLOWED_ORIGINS = new Set([
   'http://localhost:5173',
+  'https://nexchat-api.vercel.app',
   'https://nexchat-coyalb0jn-muhammad-hasbi-ashidiqi-s-projects.vercel.app',
 ]);
 
@@ -809,35 +810,26 @@ export default {
     const url = new URL(
       request.url,
     );
-    if (request.method === 'OPTIONS') {
-      return withCors(
-        new Response(null, {
-          status: 204,
-        }),
-        request,
-      );
-    }
-        if (
-      request.method === 'OPTIONS' &&
-      url.pathname.startsWith('/api/')
-    ) {
-      const origin =
-        getCorsOrigin(request);
+if (
+  request.method === 'OPTIONS' &&
+  url.pathname.startsWith('/api/')
+) {
+  const origin = getCorsOrigin(request);
 
-      if (!origin) {
-        return new Response(
-          'CORS origin not allowed',
-          {
-            status: 403,
-          },
-        );
-      }
+  if (!origin) {
+    return new Response(
+      'CORS origin not allowed',
+      {
+        status: 403,
+      },
+    );
+  }
 
-      return new Response(null, {
-        status: 204,
-        headers: corsHeaders(request),
-      });
-    }
+  return new Response(null, {
+    status: 204,
+    headers: corsHeaders(request),
+  });
+}
 
     if (url.pathname === '/health') {
       return Response.json({
