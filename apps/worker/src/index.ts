@@ -7,21 +7,25 @@ import { handleConversationsRoute } from './routes/conversations.routes';
 import { handleMessagesRoute } from './routes/messages.routes';
 import { handleContactsRoute } from './routes/contacts.routes';
 
-import { getMongoDb } from './lib/mongodb';
+import { withMongoDb } from './lib/mongodb';
 import { verifyToken } from './lib/jwt';
 
-import {
-  createConversationMessage,
-} from './services/message.service';
+import { createConversationMessage } from './services/message.service';
 
+import { getUserConversations } from './services/conversation.service';
+import { areUsersContacts } from './services/contact.service';
 import {
-  getUserConversations,
-} from './services/conversation.service';
+  findConversationById,
+  findConversationByParticipants,
+} from './repositories/conversation.repository';
 
 export interface Env {
   ENVIRONMENT: string;
   MONGO_URI: string;
   JWT_SECRET: string;
+  CLOUDINARY_CLOUD_NAME: string;
+  CLOUDINARY_API_KEY: string;
+  CLOUDINARY_API_SECRET: string;
   NEXCHAT_ROOM: DurableObjectNamespace<NexChatRoom>;
 }
 
@@ -43,87 +47,53 @@ const ALLOWED_ORIGINS = new Set([
   'https://nexchat-coyalb0jn-muhammad-hasbi-ashidiqi-s-projects.vercel.app',
 ]);
 
-function getCorsOrigin(
-  request: Request,
-): string | null {
+function getCorsOrigin(request: Request): string | null {
   const origin = request.headers.get('Origin');
 
   if (!origin) {
     return null;
   }
 
-  return ALLOWED_ORIGINS.has(origin)
-    ? origin
-    : null;
+  return ALLOWED_ORIGINS.has(origin) ? origin : null;
 }
 
-function corsHeaders(
-  request: Request,
-): Headers {
+function corsHeaders(request: Request): Headers {
   const headers = new Headers();
 
   const origin = getCorsOrigin(request);
 
   if (origin) {
-    headers.set(
-      'Access-Control-Allow-Origin',
-      origin,
-    );
+    headers.set('Access-Control-Allow-Origin', origin);
 
-    headers.set(
-      'Access-Control-Allow-Methods',
-      'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-    );
+    headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
 
-    headers.set(
-      'Access-Control-Allow-Headers',
-      'Content-Type, Authorization',
-    );
+    headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
-    headers.set(
-      'Access-Control-Max-Age',
-      '86400',
-    );
+    headers.set('Access-Control-Max-Age', '86400');
 
-    headers.set(
-      'Vary',
-      'Origin',
-    );
+    headers.set('Vary', 'Origin');
   }
 
   return headers;
 }
 
-function withCors(
-  response: Response,
-  request: Request,
-): Response {
-  const headers = new Headers(
-    response.headers,
-  );
+function withCors(response: Response, request: Request): Response {
+  const headers = new Headers(response.headers);
 
   const cors = corsHeaders(request);
 
-  cors.forEach(
-    (value, key) => {
-      headers.set(key, value);
-    },
-  );
+  cors.forEach((value, key) => {
+    headers.set(key, value);
+  });
 
-  return new Response(
-    response.body,
-    {
-      status: response.status,
-      statusText: response.statusText,
-      headers,
-    },
-  );
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }
 
-function sendSocketEvent(
-  ws: WebSocket,
-  event: unknown,
-): void {
+function sendSocketEvent(ws: WebSocket, event: unknown): void {
   if (ws.readyState !== WebSocket.OPEN) {
     return;
   }
@@ -132,124 +102,190 @@ function sendSocketEvent(
 }
 
 export class NexChatRoom extends DurableObject<Env> {
-  constructor(
-    ctx: DurableObjectState,
-    env: Env,
-  ) {
+  constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
 
-    this.ctx.setWebSocketAutoResponse(
-      new WebSocketRequestResponsePair(
-        'ping',
-        'pong',
-      ),
-    );
+    this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
   }
 
   async fetch(request: Request): Promise<Response> {
-    if (
-      request.headers.get('Upgrade')?.toLowerCase() !==
-      'websocket'
-    ) {
-      return new Response(
-        'Expected WebSocket',
-        {
-          status: 426,
-        },
-      );
+    if (request.method === 'POST' && new URL(request.url).pathname === '/contact-event') {
+      try {
+        const event = (await request.json()) as {
+          type:
+            | 'contact_request_received'
+            | 'contact_request_accepted'
+            | 'contact_request_rejected'
+            | 'contact_removed';
+          userId: string;
+          request?: unknown;
+          conversation?: unknown;
+          contact?: unknown;
+          requestId?: string;
+        };
+
+        if (!event.userId || typeof event.userId !== 'string') {
+          return new Response('Invalid contact event user id', { status: 400 });
+        }
+
+        const { userId, ...socketEvent } = event;
+
+        if (
+          event.type === 'contact_request_accepted' &&
+          event.conversation &&
+          typeof event.conversation === 'object' &&
+          'id' in event.conversation &&
+          typeof event.conversation.id === 'string' &&
+          event.request &&
+          typeof event.request === 'object' &&
+          'senderId' in event.request &&
+          'receiverId' in event.request &&
+          typeof event.request.senderId === 'string' &&
+          typeof event.request.receiverId === 'string'
+        ) {
+          this.updateUserConversationMembership(
+            [event.request.senderId, event.request.receiverId],
+            event.conversation.id,
+            'add',
+          );
+        }
+
+        if (
+          event.type === 'contact_removed' &&
+          event.contact &&
+          typeof event.contact === 'object' &&
+          'senderId' in event.contact &&
+          'receiverId' in event.contact &&
+          typeof event.contact.senderId === 'string' &&
+          typeof event.contact.receiverId === 'string'
+        ) {
+          const contact = {
+            senderId: event.contact.senderId,
+            receiverId: event.contact.receiverId,
+          };
+
+          const conversationId = await withMongoDb(this.env.MONGO_URI, async (db) => {
+            const conversation = await findConversationByParticipants(db, [
+              new ObjectId(contact.senderId),
+              new ObjectId(contact.receiverId),
+            ]);
+
+            return conversation?._id?.toString() ?? null;
+          });
+
+          if (conversationId) {
+            this.updateUserConversationMembership(
+              [contact.senderId, contact.receiverId],
+              conversationId,
+              'remove',
+            );
+          }
+
+          this.broadcastToUser(userId, socketEvent);
+
+          return Response.json({
+            ok: true,
+          });
+        }
+
+        this.broadcastToUser(userId, socketEvent);
+
+        return Response.json({
+          ok: true,
+        });
+      } catch (error) {
+        console.error('[NexChatRoom] Contact event error:', error);
+
+        return new Response('Invalid contact event', { status: 400 });
+      }
+    }
+    if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
+      return new Response('Expected WebSocket', {
+        status: 426,
+      });
     }
 
     const url = new URL(request.url);
     const token = url.searchParams.get('token');
+    console.log('[NexChatRoom] TOKEN:', token ? 'present' : 'missing');
 
     if (!token) {
-      return new Response(
-        'Missing authentication token',
-        {
-          status: 401,
-        },
-      );
+      return new Response('Missing authentication token', {
+        status: 401,
+      });
     }
 
     let tokenPayload;
 
     try {
-      tokenPayload = await verifyToken(
-        token,
-        this.env.JWT_SECRET,
-      );
+      tokenPayload = await verifyToken(token, this.env.JWT_SECRET);
+      console.log('[NexChatRoom] JWT VERIFIED:', tokenPayload.sub);
     } catch (error) {
-      console.error(
-        '[NexChatRoom] JWT verification failed:',
-        error,
-      );
+      console.error('[NexChatRoom] JWT verification failed:', error);
 
-      return new Response(
-        'Invalid authentication token',
-        {
-          status: 401,
-        },
-      );
+      return new Response('Invalid authentication token', {
+        status: 401,
+      });
     }
 
-const webSocketPair = new WebSocketPair();
+    try {
+      console.log('[NexChatRoom] Creating WebSocketPair...');
 
-const client = webSocketPair[0];
-const server = webSocketPair[1];
+      const webSocketPair = new WebSocketPair();
 
-const db = await getMongoDb(
-  this.env.MONGO_URI,
-);
+      const client = webSocketPair[0];
+      const server = webSocketPair[1];
 
-const userConversations =
-  await getUserConversations(
-    db,
-    tokenPayload.sub,
-  );
+      console.log('[NexChatRoom] Loading conversations...');
 
-const memberConversationIds =
-  userConversations
-    .map((conversation) => conversation.id)
-    .filter(
-      (id): id is string =>
-        typeof id === 'string',
-    );
+      const userConversations = await withMongoDb(this.env.MONGO_URI, (db) =>
+        getUserConversations(db, tokenPayload.sub),
+      );
 
-this.ctx.acceptWebSocket(server);
+      console.log('[NexChatRoom] Conversations loaded:', userConversations.length);
 
-server.serializeAttachment({
-  userId: tokenPayload.sub,
-  email: tokenPayload.email,
-  conversationIds: [],
-  memberConversationIds,
-} satisfies SocketAttachment);
+      const memberConversationIds = userConversations
+        .map((conversation) => conversation.id)
+        .filter((id): id is string => typeof id === 'string');
 
-    console.log(
-      '[NexChatRoom] WebSocket connected:',
-      tokenPayload.sub,
-    );
+      console.log('[NexChatRoom] Accepting WebSocket...');
 
-    return new Response(null, {
-      status: 101,
-      webSocket: client,
-    });
+      this.ctx.acceptWebSocket(server);
+
+      console.log('[NexChatRoom] WebSocket accepted');
+
+      server.serializeAttachment({
+        userId: tokenPayload.sub,
+        email: tokenPayload.email,
+        conversationIds: [],
+        memberConversationIds,
+      } satisfies SocketAttachment);
+
+      console.log('[NexChatRoom] Attachment serialized');
+
+      console.log('[NexChatRoom] WebSocket connected:', tokenPayload.sub);
+
+      return new Response(null, {
+        status: 101,
+        webSocket: client,
+      });
+    } catch (error) {
+      console.error('[NexChatRoom] WEBSOCKET SETUP FAILED:', error);
+
+      return new Response(error instanceof Error ? error.message : 'WebSocket setup failed', {
+        status: 500,
+      });
+    }
   }
 
-  private getAttachment(
-    ws: WebSocket,
-  ): SocketAttachment | null {
-    const attachment =
-      ws.deserializeAttachment();
+  private getAttachment(ws: WebSocket): SocketAttachment | null {
+    const attachment = ws.deserializeAttachment();
 
-    if (
-      !attachment ||
-      typeof attachment !== 'object'
-    ) {
+    if (!attachment || typeof attachment !== 'object') {
       return null;
     }
 
-    const data =
-      attachment as Partial<SocketAttachment>;
+    const data = attachment as Partial<SocketAttachment>;
 
     if (
       typeof data.userId !== 'string' ||
@@ -260,58 +296,86 @@ server.serializeAttachment({
       return null;
     }
 
-   return {
-    userId: data.userId,
-    email: data.email,
-    conversationIds: data.conversationIds.filter(
-      (id): id is string =>
-        typeof id === 'string',
-    ),
-    memberConversationIds:
-      data.memberConversationIds.filter(
-        (id): id is string =>
-          typeof id === 'string',
+    return {
+      userId: data.userId,
+      email: data.email,
+      conversationIds: data.conversationIds.filter((id): id is string => typeof id === 'string'),
+      memberConversationIds: data.memberConversationIds.filter(
+        (id): id is string => typeof id === 'string',
       ),
     };
   }
 
-  private async isUserInConversation(
-    conversationId: string,
-    userId: string,
-  ): Promise<boolean> {
+  private async isUserInConversation(conversationId: string, userId: string): Promise<boolean> {
     try {
-      const db = await getMongoDb(
-        this.env.MONGO_URI,
-      );
+      return await withMongoDb(this.env.MONGO_URI, async (db) => {
+        const conversations = await getUserConversations(db, userId);
 
-      const conversations =
-        await getUserConversations(
-          db,
-          userId,
-        );
-
-      return conversations.some(
-        (conversation) =>
-          conversation.id === conversationId,
-      );
+        return conversations.some((conversation) => conversation.id === conversationId);
+      });
     } catch (error) {
-      console.error(
-        '[NexChatRoom] Conversation membership check failed:',
-        error,
-      );
+      console.error('[NexChatRoom] Conversation membership check failed:', error);
 
       return false;
     }
   }
 
-  private sendError(
-    ws: WebSocket,
-    message: string,
-  ): void {
+  private sendError(ws: WebSocket, message: string): void {
     sendSocketEvent(ws, {
       type: 'error',
       message,
     });
+  }
+
+  private updateUserConversationMembership(
+    userIds: string[],
+    conversationId: string,
+    action: 'add' | 'remove',
+  ): void {
+    const targetUserIds = new Set(userIds);
+
+    for (const ws of this.ctx.getWebSockets()) {
+      const attachment = this.getAttachment(ws);
+
+      if (!attachment || !targetUserIds.has(attachment.userId)) {
+        continue;
+      }
+
+      const memberConversationIds = new Set(attachment.memberConversationIds);
+
+      if (action === 'add') {
+        memberConversationIds.add(conversationId);
+      } else {
+        memberConversationIds.delete(conversationId);
+      }
+
+      ws.serializeAttachment({
+        ...attachment,
+        memberConversationIds: [...memberConversationIds],
+        conversationIds:
+          action === 'remove'
+            ? attachment.conversationIds.filter((id) => id !== conversationId)
+            : attachment.conversationIds,
+      } satisfies SocketAttachment);
+    }
+  }
+
+  private broadcastToUser(userId: string, event: unknown): void {
+    const sockets = this.ctx.getWebSockets();
+
+    for (const socket of sockets) {
+      const attachment = this.getAttachment(socket);
+
+      if (!attachment) {
+        continue;
+      }
+
+      if (attachment.userId !== userId) {
+        continue;
+      }
+
+      sendSocketEvent(socket, event);
+    }
   }
 
   private broadcastToConversation(
@@ -319,75 +383,48 @@ server.serializeAttachment({
     event: unknown,
     exclude?: WebSocket,
   ): void {
-    const sockets =
-      this.ctx.getWebSockets();
+    const sockets = this.ctx.getWebSockets();
 
     for (const socket of sockets) {
       if (socket === exclude) {
         continue;
       }
 
-      const attachment =
-        this.getAttachment(socket);
+      const attachment = this.getAttachment(socket);
 
       if (!attachment) {
         continue;
       }
 
-      if (
-        !attachment.conversationIds.includes(
-          conversationId,
-        )
-      ) {
+      if (!attachment.memberConversationIds.includes(conversationId)) {
         continue;
       }
 
-      sendSocketEvent(
-        socket,
-        event,
-      );
+      sendSocketEvent(socket, event);
     }
   }
 
-  private broadcastToConversationIncludingSender(
-    conversationId: string,
-    event: unknown,
-  ): void {
-    const sockets =
-      this.ctx.getWebSockets();
+  private broadcastToConversationIncludingSender(conversationId: string, event: unknown): void {
+    const sockets = this.ctx.getWebSockets();
 
     for (const socket of sockets) {
-      const attachment =
-        this.getAttachment(socket);
+      const attachment = this.getAttachment(socket);
 
       if (!attachment) {
         continue;
       }
 
-      if (
-        !attachment.memberConversationIds.includes(
-          conversationId,
-        )
-      ) {
+      if (!attachment.memberConversationIds.includes(conversationId)) {
         continue;
       }
 
-      sendSocketEvent(
-        socket,
-        event,
-      );
+      sendSocketEvent(socket, event);
     }
   }
 
-  async webSocketMessage(
-    ws: WebSocket,
-    message: string | ArrayBuffer,
-  ): Promise<void> {
+  async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
     if (typeof message !== 'string') {
-      this.sendError(
-        ws,
-        'Binary messages are not supported',
-      );
+      this.sendError(ws, 'Binary messages are not supported');
 
       return;
     }
@@ -395,26 +432,17 @@ server.serializeAttachment({
     let data: ClientMessage;
 
     try {
-      data = JSON.parse(
-        message,
-      ) as ClientMessage;
+      data = JSON.parse(message) as ClientMessage;
     } catch {
-      this.sendError(
-        ws,
-        'Invalid JSON message',
-      );
+      this.sendError(ws, 'Invalid JSON message');
 
       return;
     }
 
-    const attachment =
-      this.getAttachment(ws);
+    const attachment = this.getAttachment(ws);
 
     if (!attachment) {
-      this.sendError(
-        ws,
-        'Unauthenticated WebSocket',
-      );
+      this.sendError(ws, 'Unauthenticated WebSocket');
 
       return;
     }
@@ -422,77 +450,43 @@ server.serializeAttachment({
     try {
       switch (data.type) {
         case 'join_conversation': {
-          await this.handleJoinConversation(
-            ws,
-            attachment,
-            data.conversationId,
-          );
+          await this.handleJoinConversation(ws, attachment, data.conversationId);
 
           break;
         }
 
         case 'leave_conversation': {
-          this.handleLeaveConversation(
-            ws,
-            attachment,
-            data.conversationId,
-          );
+          this.handleLeaveConversation(ws, attachment, data.conversationId);
 
           break;
         }
 
         case 'send_message': {
-          await this.handleSendMessage(
-            ws,
-            attachment,
-            data.conversationId,
-            data.content,
-          );
+          await this.handleSendMessage(ws, attachment, data.conversationId, data.content);
 
           break;
         }
 
         case 'typing_start': {
-          await this.handleTyping(
-            ws,
-            attachment,
-            data.conversationId,
-            'user_typing',
-          );
+          await this.handleTyping(ws, attachment, data.conversationId, 'user_typing');
 
           break;
         }
 
         case 'typing_stop': {
-          await this.handleTyping(
-            ws,
-            attachment,
-            data.conversationId,
-            'user_stopped_typing',
-          );
+          await this.handleTyping(ws, attachment, data.conversationId, 'user_stopped_typing');
 
           break;
         }
 
         default: {
-          this.sendError(
-            ws,
-            `Unknown event type: ${data.type}`,
-          );
+          this.sendError(ws, `Unknown event type: ${data.type}`);
         }
       }
     } catch (error) {
-      console.error(
-        '[NexChatRoom] WebSocket message error:',
-        error,
-      );
+      console.error('[NexChatRoom] WebSocket message error:', error);
 
-      this.sendError(
-        ws,
-        error instanceof Error
-          ? error.message
-          : 'WebSocket request failed',
-      );
+      this.sendError(ws, error instanceof Error ? error.message : 'WebSocket request failed');
     }
   }
 
@@ -502,53 +496,61 @@ server.serializeAttachment({
     conversationId?: string,
   ): Promise<void> {
     if (!conversationId) {
-      this.sendError(
-        ws,
-        'Conversation id is required',
-      );
+      this.sendError(ws, 'Conversation id is required');
 
       return;
     }
 
-    const allowed =
-      await this.isUserInConversation(
-        conversationId,
-        attachment.userId,
-      );
+    const allowed = await this.isUserInConversation(conversationId, attachment.userId);
 
     if (!allowed) {
-      this.sendError(
-        ws,
-        'User is not a member of this conversation',
-      );
+      this.sendError(ws, 'User is not a member of this conversation');
 
       return;
     }
 
-    if (
-      !attachment.conversationIds.includes(
-        conversationId,
-      )
-    ) {
-      attachment.conversationIds.push(
-        conversationId,
-      );
+    const conversation = await withMongoDb(this.env.MONGO_URI, async (db) => {
+      const currentConversation = await findConversationById(db, new ObjectId(conversationId));
+
+      if (!currentConversation) {
+        return null;
+      }
+
+      const otherParticipantId = currentConversation.participants
+        .map((participant) => participant.toString())
+        .find((participantId) => participantId !== attachment.userId);
+
+      if (!otherParticipantId) {
+        return null;
+      }
+
+      const contactsAllowed = await areUsersContacts(db, attachment.userId, otherParticipantId);
+
+      if (!contactsAllowed) {
+        return null;
+      }
+
+      return currentConversation;
+    });
+
+    if (!conversation) {
+      this.sendError(ws, 'Users must be accepted contacts before joining this conversation');
+
+      return;
     }
 
-    ws.serializeAttachment(
-      attachment,
-    );
+    if (!attachment.conversationIds.includes(conversationId)) {
+      attachment.conversationIds.push(conversationId);
+    }
+
+    ws.serializeAttachment(attachment);
 
     sendSocketEvent(ws, {
       type: 'joined_conversation',
       conversationId,
     });
 
-    console.log(
-      '[NexChatRoom] User joined conversation:',
-      attachment.userId,
-      conversationId,
-    );
+    console.log('[NexChatRoom] User joined conversation:', attachment.userId, conversationId);
   }
 
   private handleLeaveConversation(
@@ -560,26 +562,16 @@ server.serializeAttachment({
       return;
     }
 
-    attachment.conversationIds =
-      attachment.conversationIds.filter(
-        (id) =>
-          id !== conversationId,
-      );
+    attachment.conversationIds = attachment.conversationIds.filter((id) => id !== conversationId);
 
-    ws.serializeAttachment(
-      attachment,
-    );
+    ws.serializeAttachment(attachment);
 
     sendSocketEvent(ws, {
       type: 'left_conversation',
       conversationId,
     });
 
-    console.log(
-      '[NexChatRoom] User left conversation:',
-      attachment.userId,
-      conversationId,
-    );
+    console.log('[NexChatRoom] User left conversation:', attachment.userId, conversationId);
   }
 
   private async handleSendMessage(
@@ -589,89 +581,49 @@ server.serializeAttachment({
     content?: string,
   ): Promise<void> {
     if (!conversationId) {
-      this.sendError(
-        ws,
-        'Conversation id is required',
-      );
+      this.sendError(ws, 'Conversation id is required');
 
       return;
     }
 
-    if (!attachment.conversationIds.includes(
-      conversationId,
-    )) {
-      this.sendError(
-        ws,
-        'Join the conversation before sending messages',
-      );
+    if (!attachment.conversationIds.includes(conversationId)) {
+      this.sendError(ws, 'Join the conversation before sending messages');
 
       return;
     }
 
-    if (
-      typeof content !== 'string' ||
-      !content.trim()
-    ) {
-      this.sendError(
-        ws,
-        'Message content is required',
-      );
+    if (typeof content !== 'string' || !content.trim()) {
+      this.sendError(ws, 'Message content is required');
 
       return;
     }
 
-    const db = await getMongoDb(
-      this.env.MONGO_URI,
+    const message = await withMongoDb(this.env.MONGO_URI, (db) =>
+      createConversationMessage(db, conversationId, attachment.userId, content),
     );
 
-    const message =
-      await createConversationMessage(
-        db,
-        conversationId,
-        attachment.userId,
-        content,
-      );
+    this.broadcastToConversationIncludingSender(conversationId, {
+      type: 'new_message',
+      message,
+    });
 
-    this.broadcastToConversationIncludingSender(
-      conversationId,
-      {
-        type: 'new_message',
-        message,
-      },
-    );
-
-    console.log(
-      '[NexChatRoom] Message created:',
-      message.id,
-    );
+    console.log('[NexChatRoom] Message created:', message.id);
   }
 
   private async handleTyping(
     ws: WebSocket,
     attachment: SocketAttachment,
     conversationId: string | undefined,
-    eventType:
-      | 'user_typing'
-      | 'user_stopped_typing',
+    eventType: 'user_typing' | 'user_stopped_typing',
   ): Promise<void> {
     if (!conversationId) {
-      this.sendError(
-        ws,
-        'Conversation id is required',
-      );
+      this.sendError(ws, 'Conversation id is required');
 
       return;
     }
 
-    if (
-      !attachment.conversationIds.includes(
-        conversationId,
-      )
-    ) {
-      this.sendError(
-        ws,
-        'Join the conversation first',
-      );
+    if (!attachment.memberConversationIds.includes(conversationId)) {
+      this.sendError(ws, 'Conversation access denied');
 
       return;
     }
@@ -687,39 +639,19 @@ server.serializeAttachment({
     );
   }
 
-  async webSocketClose(
-    ws: WebSocket,
-    code: number,
-    reason: string,
-  ): Promise<void> {
-    const attachment =
-      this.getAttachment(ws);
+  async webSocketClose(ws: WebSocket, code: number, reason: string): Promise<void> {
+    const attachment = this.getAttachment(ws);
 
-    console.log(
-      '[NexChatRoom] WebSocket closed:',
-      attachment?.userId ?? 'unknown',
-      code,
-      reason,
-    );
+    console.log('[NexChatRoom] WebSocket closed:', attachment?.userId ?? 'unknown', code, reason);
   }
 
-  async webSocketError(
-    ws: WebSocket,
-    error: unknown,
-  ): Promise<void> {
-    console.error(
-      '[NexChatRoom] WebSocket error:',
-      error,
-    );
+  async webSocketError(ws: WebSocket, error: unknown): Promise<void> {
+    console.error('[NexChatRoom] WebSocket error:', error);
   }
 }
 
-async function mongoHealth(
-  env: Env,
-): Promise<Response> {
-  const client = new MongoClient(
-    env.MONGO_URI,
-  );
+async function mongoHealth(env: Env): Promise<Response> {
+  const client = new MongoClient(env.MONGO_URI);
 
   try {
     const db = client.db('nexchat');
@@ -730,68 +662,43 @@ async function mongoHealth(
       ping: 1,
     });
 
-    console.log(
-      '[MongoHealth] ping completed',
-    );
+    console.log('[MongoHealth] ping completed');
 
-    const testUser = await db
-      .collection('users')
-      .findOne({
-        email: 'local-test@nexchat.local',
-      });
+    const testUser = await db.collection('users').findOne({
+      email: 'local-test@nexchat.local',
+    });
 
-    console.log(
-      '[MongoHealth] email findOne completed:',
-      Boolean(testUser),
-    );
+    console.log('[MongoHealth] email findOne completed:', Boolean(testUser));
 
     let idUser = null;
 
     if (testUser?._id) {
-      const testId =
-        testUser._id.toString();
+      const testId = testUser._id.toString();
 
-      console.log(
-        '[MongoHealth] testing ObjectId:',
-        testId,
-      );
+      console.log('[MongoHealth] testing ObjectId:', testId);
 
-      idUser = await db
-        .collection('users')
-        .findOne({
-          _id: new ObjectId(testId),
-        });
+      idUser = await db.collection('users').findOne({
+        _id: new ObjectId(testId),
+      });
 
-      console.log(
-        '[MongoHealth] ObjectId findOne completed:',
-        Boolean(idUser),
-      );
+      console.log('[MongoHealth] ObjectId findOne completed:', Boolean(idUser));
     }
 
     return Response.json({
       status: 'ok',
       service: 'nexchat-worker',
-      mongodb:
-        result.ok === 1
-          ? 'connected'
-          : 'unknown',
+      mongodb: result.ok === 1 ? 'connected' : 'unknown',
       emailFindOne: Boolean(testUser),
       objectIdFindOne: Boolean(idUser),
     });
   } catch (error) {
-    console.error(
-      'MongoDB health check failed:',
-      error,
-    );
+    console.error('MongoDB health check failed:', error);
 
     return Response.json(
       {
         status: 'error',
         mongodb: 'connection_failed',
-        error:
-          error instanceof Error
-            ? error.message
-            : String(error),
+        error: error instanceof Error ? error.message : String(error),
       },
       {
         status: 500,
@@ -803,33 +710,22 @@ async function mongoHealth(
 }
 
 export default {
-  async fetch(
-    request: Request,
-    env: Env,
-  ): Promise<Response> {
-    const url = new URL(
-      request.url,
-    );
-if (
-  request.method === 'OPTIONS' &&
-  url.pathname.startsWith('/api/')
-) {
-  const origin = getCorsOrigin(request);
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+    if (request.method === 'OPTIONS' && url.pathname.startsWith('/api/')) {
+      const origin = getCorsOrigin(request);
 
-  if (!origin) {
-    return new Response(
-      'CORS origin not allowed',
-      {
-        status: 403,
-      },
-    );
-  }
+      if (!origin) {
+        return new Response('CORS origin not allowed', {
+          status: 403,
+        });
+      }
 
-  return new Response(null, {
-    status: 204,
-    headers: corsHeaders(request),
-  });
-}
+      return new Response(null, {
+        status: 204,
+        headers: corsHeaders(request),
+      });
+    }
 
     if (url.pathname === '/health') {
       return Response.json({
@@ -839,162 +735,94 @@ if (
       });
     }
 
-    if (
-      url.pathname === '/mongo-health'
-    ) {
+    if (url.pathname === '/mongo-health') {
       return mongoHealth(env);
     }
 
     if (url.pathname === '/ws') {
-      if (
-        request.headers
-          .get('Upgrade')
-          ?.toLowerCase() !==
-        'websocket'
-      ) {
-        return new Response(
-          'Expected WebSocket',
-          {
-            status: 426,
-          },
-        );
+      if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
+        return new Response('Expected WebSocket', {
+          status: 426,
+        });
       }
 
-      const roomId =
-        env.NEXCHAT_ROOM.idFromName(
-          'global',
-        );
+      const roomId = env.NEXCHAT_ROOM.idFromName('global');
 
-      const room =
-        env.NEXCHAT_ROOM.get(
-          roomId,
-        );
+      const room = env.NEXCHAT_ROOM.get(roomId);
 
-      return room.fetch(
-        request,
-      );
+      return room.fetch(request);
     }
 
-    if (
-      url.pathname.startsWith('/api/')
-    ) {
+    if (url.pathname.startsWith('/api/')) {
       try {
-        const db =
-          await getMongoDb(
-            env.MONGO_URI,
-          );
+        return await withMongoDb(env.MONGO_URI, async (db) => {
+          const authResponse = await handleAuthRoute(request, url.pathname, db, env);
 
-        const authResponse =
-          await handleAuthRoute(
-            request,
-            url.pathname,
-            db,
-            env,
-          );
-        if (authResponse) {
-          return withCors(
-            authResponse,
-            request,
-          );
-        }
+          if (authResponse) {
+            return withCors(authResponse, request);
+          }
 
-        const usersResponse =
-          await handleUsersRoute(
-            request,
-            url.pathname,
-            db,
-            env,
-          );
+          const usersResponse = await handleUsersRoute(request, url.pathname, db, env);
 
-        if (usersResponse) {
-          return withCors(
-            usersResponse,
-            request,
-          );
-        }
+          if (usersResponse) {
+            return withCors(usersResponse, request);
+          }
 
-        const contactsResponse =
-          await handleContactsRoute(
+          const contactsResponse = await handleContactsRoute(request, url.pathname, db, env);
+
+          if (contactsResponse) {
+            return withCors(contactsResponse, request);
+          }
+
+          const conversationsResponse = await handleConversationsRoute(
             request,
             url.pathname,
             db,
             env,
           );
 
-        if (contactsResponse) {
+          if (conversationsResponse) {
+            return withCors(conversationsResponse, request);
+          }
+
+          const messagesResponse = await handleMessagesRoute(request, url.pathname, db, env);
+
+          if (messagesResponse) {
+            return withCors(messagesResponse, request);
+          }
+
           return withCors(
-            contactsResponse,
+            Response.json(
+              {
+                message: 'API route not found',
+              },
+              {
+                status: 404,
+              },
+            ),
             request,
           );
-        }
-
-        const conversationsResponse =
-          await handleConversationsRoute(
-            request,
-            url.pathname,
-            db,
-            env,
-          );
-
-        if (conversationsResponse) {
-          return withCors(
-            conversationsResponse,
-            request,
-          );
-        }
-
-        const messagesResponse =
-          await handleMessagesRoute(
-            request,
-            url.pathname,
-            db,
-            env,
-          );
-
-        if (messagesResponse) {
-          return withCors(
-            messagesResponse,
-            request,
-          );
-        }
-
-      return withCors(
-        Response.json(
-          {
-            message:
-              'API route not found',
-          },
-          {
-            status: 404,
-          },
-        ),
-        request,
-      );
+        });
       } catch (error) {
-        console.error(
-          '[Worker] API error:',
-          error,
-        );
+        console.error('[Worker] API error:', error);
 
-      return withCors(
-        Response.json(
-          {
-            message:
-              'Internal server error',
-          },
-          {
-            status: 500,
-          },
-        ),
-        request,
-      );
+        return withCors(
+          Response.json(
+            {
+              message: 'Internal server error',
+            },
+            {
+              status: 500,
+            },
+          ),
+          request,
+        );
       }
     }
 
     return Response.json(
       {
-        message:
-          'NexChat Worker',
+        message: 'NexChat Worker',
         status: 'ok',
       },
       {

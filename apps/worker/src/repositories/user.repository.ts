@@ -5,6 +5,7 @@ export interface User {
   name: string;
   email: string;
   passwordHash: string;
+  avatarUrl?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -99,6 +100,28 @@ export async function createUser(
     ...user,
     _id: result.insertedId,
   };
+}
+
+export async function updateUser(
+  db: Db,
+  userId: ObjectId,
+  input: { name?: string; avatarUrl?: string | null },
+): Promise<User | null> {
+  const result = await getUsersCollection(db).findOneAndUpdate(
+    { _id: userId },
+    {
+      $set: {
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.avatarUrl !== undefined
+          ? { avatarUrl: input.avatarUrl }
+          : {}),
+        updatedAt: new Date(),
+      },
+    },
+    { returnDocument: 'after' },
+  );
+
+  return result;
 }
 
 export async function findAllUsers(

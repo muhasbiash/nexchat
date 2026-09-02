@@ -28,9 +28,7 @@ const serializeMessage = (message: Message) => ({
   createdAt: message.createdAt.toISOString(),
 });
 
-export const createMessage = async (
-  input: CreateMessageInput,
-) => {
+export const createMessage = async (input: CreateMessageInput) => {
   const message: Message = {
     conversationId: input.conversationId,
     senderId: input.senderId,
@@ -38,8 +36,7 @@ export const createMessage = async (
     createdAt: new Date(),
   };
 
-  const result =
-    await getMessagesCollection().insertOne(message);
+  const result = await getMessagesCollection().insertOne(message);
 
   return serializeMessage({
     ...message,
@@ -47,16 +44,13 @@ export const createMessage = async (
   });
 };
 
-export const findMessagesByConversationId = async (
-  conversationId: ObjectId,
-) => {
-  const messages =
-    await getMessagesCollection()
-      .find({
-        conversationId,
-      })
-      .sort({ createdAt: 1 })
-      .toArray();
+export const findMessagesByConversationId = async (conversationId: ObjectId) => {
+  const messages = await getMessagesCollection()
+    .find({
+      conversationId,
+    })
+    .sort({ createdAt: 1 })
+    .toArray();
 
   return messages.map(serializeMessage);
 };

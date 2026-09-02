@@ -62,8 +62,5 @@ export const verifyConversationMembership = async (
     return false;
   }
 
-  return isUserInConversation(
-    new ObjectId(conversationId),
-    new ObjectId(userId),
-  );
+  return isUserInConversation(new ObjectId(conversationId), new ObjectId(userId));
 };

@@ -1,15 +1,21 @@
 import { MongoClient, type Db } from 'mongodb';
 
-export async function getMongoDb(
-  uri: string,
-): Promise<Db> {
-  console.log('[MongoDB] Creating new client');
-
+export async function withMongoDb<T>(uri: string, callback: (db: Db) => Promise<T>): Promise<T> {
   const client = new MongoClient(uri);
 
-  await client.connect();
+  console.log('[MongoDB] Creating request-scoped client');
 
-  console.log('[MongoDB] Connected');
+  try {
+    await client.connect();
 
-  return client.db('nexchat');
+    console.log('[MongoDB] Connected');
+
+    const db = client.db('nexchat');
+
+    return await callback(db);
+  } finally {
+    await client.close();
+
+    console.log('[MongoDB] Client closed');
+  }
 }

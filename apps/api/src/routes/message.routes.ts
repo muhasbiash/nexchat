@@ -26,10 +26,7 @@ router.get('/:conversationId', async (req: AuthenticatedRequest, res) => {
       });
     }
 
-    const isMember = await verifyConversationMembership(
-      conversationId,
-      req.userId,
-    );
+    const isMember = await verifyConversationMembership(conversationId, req.userId);
 
     if (!isMember) {
       return res.status(403).json({
@@ -75,10 +72,7 @@ router.post('/:conversationId', async (req: AuthenticatedRequest, res) => {
       });
     }
 
-    const isMember = await verifyConversationMembership(
-      conversationId,
-      req.userId,
-    );
+    const isMember = await verifyConversationMembership(conversationId, req.userId);
 
     if (!isMember) {
       return res.status(403).json({
@@ -94,11 +88,7 @@ router.post('/:conversationId', async (req: AuthenticatedRequest, res) => {
       });
     }
 
-    const message = await sendMessage(
-      conversationId,
-      req.userId,
-      content,
-    );
+    const message = await sendMessage(conversationId, req.userId, content);
 
     return res.status(201).json({
       message,
@@ -106,8 +96,7 @@ router.post('/:conversationId', async (req: AuthenticatedRequest, res) => {
   } catch (error) {
     if (
       error instanceof Error &&
-      (error.message === 'Invalid ID' ||
-        error.message === 'Message content is required')
+      (error.message === 'Invalid ID' || error.message === 'Message content is required')
     ) {
       return res.status(400).json({
         message: error.message,

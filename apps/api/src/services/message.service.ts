@@ -1,9 +1,6 @@
 import { ObjectId } from 'mongodb';
 
-import {
-  createMessage,
-  findMessagesByConversationId,
-} from '../repositories/message.repository.js';
+import { createMessage, findMessagesByConversationId } from '../repositories/message.repository.js';
 
 export interface MessageResponse {
   id: string;
@@ -18,10 +15,7 @@ export const sendMessage = async (
   senderId: string,
   content: string,
 ): Promise<MessageResponse> => {
-  if (
-    !ObjectId.isValid(conversationId) ||
-    !ObjectId.isValid(senderId)
-  ) {
+  if (!ObjectId.isValid(conversationId) || !ObjectId.isValid(senderId)) {
     throw new Error('Invalid ID');
   }
 
@@ -45,7 +39,5 @@ export const getConversationMessages = async (
     throw new Error('Invalid conversation ID');
   }
 
-  return findMessagesByConversationId(
-    new ObjectId(conversationId),
-  );
+  return findMessagesByConversationId(new ObjectId(conversationId));
 };

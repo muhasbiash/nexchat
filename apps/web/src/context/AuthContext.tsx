@@ -82,6 +82,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await login(email, password);
   };
 
+  const updateUser = async (input: { name?: string; avatarUrl?: string | null }): Promise<void> => {
+    const data = await api<{ user: AuthUser }>('/api/auth/me', {
+      method: 'PATCH',
+      authenticated: true,
+      body: JSON.stringify(input),
+    });
+
+    setUser(data.user);
+  };
+
   const logout = (): void => {
     localStorage.removeItem('nexchat_token');
     setUser(null);
@@ -94,6 +104,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         loading,
         login,
         register,
+        updateUser,
         logout,
       }}
     >

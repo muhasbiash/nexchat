@@ -7,6 +7,7 @@ export interface User {
   name: string;
   email: string;
   passwordHash: string;
+  avatarUrl?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -16,7 +17,10 @@ export interface CreateUserInput {
   email: string;
   passwordHash: string;
 }
-
+export interface UpdateUserInput {
+  name?: string;
+  avatarUrl?: string | null;
+}
 const getUsersCollection = (): Collection<User> => {
   return getMongoDb().collection<User>('users');
 };
@@ -43,6 +47,29 @@ export const findAllUsers = async (): Promise<User[]> => {
     })
     .sort({ name: 1 })
     .toArray();
+};
+export const updateUser = async (id: string, input: UpdateUserInput): Promise<User | null> => {
+  if (!ObjectId.isValid(id)) {
+    return null;
+  }
+
+  const update: Partial<User> = {
+    updatedAt: new Date(),
+  };
+
+  if (input.name !== undefined) {
+    update.name = input.name;
+  }
+
+  if (input.avatarUrl !== undefined) {
+    update.avatarUrl = input.avatarUrl;
+  }
+
+  return getUsersCollection().findOneAndUpdate(
+    { _id: new ObjectId(id) },
+    { $set: update },
+    { returnDocument: 'after' },
+  );
 };
 
 export const createUser = async (input: CreateUserInput): Promise<User> => {

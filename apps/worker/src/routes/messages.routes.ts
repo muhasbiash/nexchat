@@ -1,9 +1,6 @@
 import type { Db } from 'mongodb';
 
-import {
-  createConversationMessage,
-  getConversationMessages,
-} from '../services/message.service';
+import { createConversationMessage, getConversationMessages } from '../services/message.service';
 
 import { verifyToken } from '../lib/jwt';
 
@@ -11,10 +8,7 @@ interface MessageEnv {
   JWT_SECRET: string;
 }
 
-function json(
-  data: unknown,
-  status = 200,
-): Response {
+function json(data: unknown, status = 200): Response {
   return Response.json(data, {
     status,
     headers: {
@@ -23,24 +17,16 @@ function json(
   });
 }
 
-function getBearerToken(
-  request: Request,
-): string | null {
-  const authorization = request.headers.get(
-    'Authorization',
-  );
+function getBearerToken(request: Request): string | null {
+  const authorization = request.headers.get('Authorization');
 
   if (!authorization) {
     return null;
   }
 
-  const [scheme, token] =
-    authorization.split(' ');
+  const [scheme, token] = authorization.split(' ');
 
-  if (
-    scheme?.toLowerCase() !== 'bearer' ||
-    !token
-  ) {
+  if (scheme?.toLowerCase() !== 'bearer' || !token) {
     return null;
   }
 
@@ -53,9 +39,7 @@ export async function handleMessagesRoute(
   db: Db,
   env: MessageEnv,
 ): Promise<Response | null> {
-  const match = pathname.match(
-    /^\/api\/messages\/([^/]+)$/,
-  );
+  const match = pathname.match(/^\/api\/messages\/([^/]+)$/);
 
   if (!match) {
     return null;
@@ -86,10 +70,7 @@ export async function handleMessagesRoute(
   let payload;
 
   try {
-    payload = await verifyToken(
-      token,
-      env.JWT_SECRET,
-    );
+    payload = await verifyToken(token, env.JWT_SECRET);
   } catch {
     return json(
       {
@@ -101,12 +82,7 @@ export async function handleMessagesRoute(
 
   if (request.method === 'GET') {
     try {
-      const messages =
-        await getConversationMessages(
-          db,
-          conversationId,
-          payload.sub,
-        );
+      const messages = await getConversationMessages(db, conversationId, payload.sub);
 
       return json({
         messages,
@@ -114,12 +90,7 @@ export async function handleMessagesRoute(
     } catch (error) {
       if (
         error instanceof Error &&
-        (
-          error.message ===
-            'Invalid conversation id' ||
-          error.message ===
-            'Invalid user id'
-        )
+        (error.message === 'Invalid conversation id' || error.message === 'Invalid user id')
       ) {
         return json(
           {
@@ -129,23 +100,27 @@ export async function handleMessagesRoute(
         );
       }
 
-      if (
-        error instanceof Error &&
-        error.message ===
-          'User is not a member of this conversation'
-      ) {
-        return json(
-          {
-            message: error.message,
-          },
-          403,
-        );
+      if (error instanceof Error) {
+        if (error.message === 'Conversation not found') {
+          return json(
+            {
+              message: error.message,
+            },
+            404,
+          );
+        }
+
+        if (error.message === 'User is not a member of this conversation') {
+          return json(
+            {
+              message: error.message,
+            },
+            403,
+          );
+        }
       }
 
-      console.error(
-        '[Messages] List error:',
-        error,
-      );
+      console.error('[Messages] List error:', error);
 
       return json(
         {
@@ -158,14 +133,11 @@ export async function handleMessagesRoute(
 
   if (request.method === 'POST') {
     try {
-      const body =
-        await request.json() as {
-          content?: string;
-        };
+      const body = (await request.json()) as {
+        content?: string;
+      };
 
-      if (
-        typeof body.content !== 'string'
-      ) {
+      if (typeof body.content !== 'string') {
         return json(
           {
             message: 'content is required',
@@ -174,13 +146,12 @@ export async function handleMessagesRoute(
         );
       }
 
-      const message =
-        await createConversationMessage(
-          db,
-          conversationId,
-          payload.sub,
-          body.content,
-        );
+      const message = await createConversationMessage(
+        db,
+        conversationId,
+        payload.sub,
+        body.content,
+      );
 
       return json(
         {
@@ -191,14 +162,9 @@ export async function handleMessagesRoute(
     } catch (error) {
       if (
         error instanceof Error &&
-        (
-          error.message ===
-            'Invalid conversation id' ||
-          error.message ===
-            'Invalid sender id' ||
-          error.message ===
-            'Message content is required'
-        )
+        (error.message === 'Invalid conversation id' ||
+          error.message === 'Invalid sender id' ||
+          error.message === 'Message content is required')
       ) {
         return json(
           {
@@ -208,23 +174,41 @@ export async function handleMessagesRoute(
         );
       }
 
-      if (
-        error instanceof Error &&
-        error.message ===
-          'User is not a member of this conversation'
-      ) {
-        return json(
-          {
-            message: error.message,
-          },
-          403,
-        );
+      if (error instanceof Error) {
+        if (error.message === 'Conversation not found') {
+          return json(
+            {
+              message: error.message,
+            },
+            404,
+          );
+        }
+
+        if (
+          error.message === 'User is not a member of this conversation' ||
+          error.message === 'Users must be accepted contacts before sending messages'
+        ) {
+          return json(
+            {
+              message: error.message,
+            },
+            403,
+          );
+        }
+
+        if (error.message === 'Conversation participant not found') {
+          console.error('[Messages] Invalid conversation participants');
+
+          return json(
+            {
+              message: 'Internal server error',
+            },
+            500,
+          );
+        }
       }
 
-      console.error(
-        '[Messages] Create error:',
-        error,
-      );
+      console.error('[Messages] Create error:', error);
 
       return json(
         {

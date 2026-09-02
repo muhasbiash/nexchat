@@ -1,13 +1,8 @@
 import type { Db } from 'mongodb';
 
-import {
-  createDirectConversation,
-  getUserConversations,
-} from '../services/conversation.service';
+import { createDirectConversation, getUserConversations } from '../services/conversation.service';
 
-import {
-  areUsersContacts,
-} from '../services/contact.service';
+import { areUsersContacts } from '../services/contact.service';
 
 import { verifyToken } from '../lib/jwt';
 
@@ -15,10 +10,7 @@ interface ConversationEnv {
   JWT_SECRET: string;
 }
 
-function json(
-  data: unknown,
-  status = 200,
-): Response {
+function json(data: unknown, status = 200): Response {
   return Response.json(data, {
     status,
     headers: {
@@ -27,23 +19,16 @@ function json(
   });
 }
 
-function getBearerToken(
-  request: Request,
-): string | null {
-  const authorization =
-    request.headers.get('Authorization');
+function getBearerToken(request: Request): string | null {
+  const authorization = request.headers.get('Authorization');
 
   if (!authorization) {
     return null;
   }
 
-  const [scheme, token] =
-    authorization.split(' ');
+  const [scheme, token] = authorization.split(' ');
 
-  if (
-    scheme?.toLowerCase() !== 'bearer' ||
-    !token
-  ) {
+  if (scheme?.toLowerCase() !== 'bearer' || !token) {
     return null;
   }
 
@@ -56,17 +41,11 @@ export async function handleConversationsRoute(
   db: Db,
   env: ConversationEnv,
 ): Promise<Response | null> {
-  const directMatch = pathname.match(
-    /^\/api\/conversations\/direct\/([^/]+)$/,
-  );
+  const directMatch = pathname.match(/^\/api\/conversations\/direct\/([^/]+)$/);
 
-  const isConversationsRoute =
-    pathname === '/api/conversations';
+  const isConversationsRoute = pathname === '/api/conversations';
 
-  if (
-    !isConversationsRoute &&
-    !directMatch
-  ) {
+  if (!isConversationsRoute && !directMatch) {
     return null;
   }
 
@@ -77,10 +56,7 @@ export async function handleConversationsRoute(
    * POST /api/conversations/direct/:participantId
    */
 
-  if (
-    request.method !== 'GET' &&
-    !directMatch
-  ) {
+  if (request.method !== 'GET' && !directMatch) {
     return json(
       {
         message: 'Method not allowed',
@@ -103,15 +79,9 @@ export async function handleConversationsRoute(
   let payload;
 
   try {
-    payload = await verifyToken(
-      token,
-      env.JWT_SECRET,
-    );
+    payload = await verifyToken(token, env.JWT_SECRET);
   } catch (error) {
-    console.error(
-      '[Conversations] JWT verification failed:',
-      error,
-    );
+    console.error('[Conversations] JWT verification failed:', error);
 
     return json(
       {
@@ -127,12 +97,8 @@ export async function handleConversationsRoute(
    * A direct conversation may only be created
    * when the two users are already accepted contacts.
    */
-  if (
-    request.method === 'POST' &&
-    directMatch
-  ) {
-    const participantId =
-      directMatch[1];
+  if (request.method === 'POST' && directMatch) {
+    const participantId = directMatch[1];
 
     if (!participantId) {
       return json(
@@ -150,29 +116,18 @@ export async function handleConversationsRoute(
        * Both users must have an accepted
        * contact relationship.
        */
-      const areContacts =
-        await areUsersContacts(
-          db,
-          payload.sub,
-          participantId,
-        );
+      const areContacts = await areUsersContacts(db, payload.sub, participantId);
 
       if (!areContacts) {
         return json(
           {
-            message:
-              'Users must be accepted contacts before starting a conversation',
+            message: 'Users must be accepted contacts before starting a conversation',
           },
           403,
         );
       }
 
-      const conversation =
-        await createDirectConversation(
-          db,
-          payload.sub,
-          participantId,
-        );
+      const conversation = await createDirectConversation(db, payload.sub, participantId);
 
       return json(
         {
@@ -183,14 +138,9 @@ export async function handleConversationsRoute(
     } catch (error) {
       if (
         error instanceof Error &&
-        (
-          error.message ===
-            'Invalid current user id' ||
-          error.message ===
-            'Invalid participant id' ||
-          error.message ===
-            'Cannot create conversation with yourself'
-        )
+        (error.message === 'Invalid current user id' ||
+          error.message === 'Invalid participant id' ||
+          error.message === 'Cannot create conversation with yourself')
       ) {
         return json(
           {
@@ -202,12 +152,8 @@ export async function handleConversationsRoute(
 
       if (
         error instanceof Error &&
-        (
-          error.message ===
-            'Participant not found' ||
-          error.message ===
-            'Conversation user not found'
-        )
+        (error.message === 'Participant not found' ||
+          error.message === 'Conversation user not found')
       ) {
         return json(
           {
@@ -217,10 +163,7 @@ export async function handleConversationsRoute(
         );
       }
 
-      console.error(
-        '[Conversations] Direct create error:',
-        error,
-      );
+      console.error('[Conversations] Direct create error:', error);
 
       return json(
         {
@@ -234,25 +177,15 @@ export async function handleConversationsRoute(
   /*
    * GET /api/conversations
    */
-  if (
-    request.method === 'GET' &&
-    pathname === '/api/conversations'
-  ) {
+  if (request.method === 'GET' && pathname === '/api/conversations') {
     try {
-      const conversations =
-        await getUserConversations(
-          db,
-          payload.sub,
-        );
+      const conversations = await getUserConversations(db, payload.sub);
 
       return json({
         conversations,
       });
     } catch (error) {
-      console.error(
-        '[Conversations] List error:',
-        error,
-      );
+      console.error('[Conversations] List error:', error);
 
       return json(
         {

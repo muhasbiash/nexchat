@@ -1,9 +1,6 @@
 import { ObjectId, type Db } from 'mongodb';
 
-export type ContactRequestStatus =
-  | 'pending'
-  | 'accepted'
-  | 'rejected';
+export type ContactRequestStatus = 'pending' | 'accepted' | 'rejected';
 
 export interface Contact {
   _id?: ObjectId;
@@ -83,6 +80,51 @@ export async function updateContactStatus(
   return result;
 }
 
+export async function reuseRejectedContactRequest(
+  db: Db,
+  contactId: ObjectId,
+  requesterId: ObjectId,
+  recipientId: ObjectId,
+): Promise<Contact | null> {
+  const now = new Date();
+
+  const result = await getContactsCollection(db).findOneAndUpdate(
+    {
+      _id: contactId,
+      status: 'rejected',
+    },
+    {
+      $set: {
+        requesterId,
+        recipientId,
+        status: 'pending',
+        createdAt: now,
+        updatedAt: now,
+      },
+    },
+    {
+      returnDocument: 'after',
+    },
+  );
+
+  return result;
+}
+
+export async function findPendingOutgoingRequests(
+  db: Db,
+  requesterId: ObjectId,
+): Promise<Contact[]> {
+  return getContactsCollection(db)
+    .find({
+      requesterId,
+      status: 'pending',
+    })
+    .sort({
+      createdAt: -1,
+    })
+    .toArray();
+}
+
 export async function findPendingIncomingRequests(
   db: Db,
   recipientId: ObjectId,
@@ -98,10 +140,7 @@ export async function findPendingIncomingRequests(
     .toArray();
 }
 
-export async function findAcceptedContacts(
-  db: Db,
-  userId: ObjectId,
-): Promise<Contact[]> {
+export async function findAcceptedContacts(db: Db, userId: ObjectId): Promise<Contact[]> {
   return getContactsCollection(db)
     .find({
       status: 'accepted',
@@ -120,10 +159,26 @@ export async function findAcceptedContacts(
     .toArray();
 }
 
-export async function deleteContact(
+export async function findAcceptedContactById(
   db: Db,
   contactId: ObjectId,
-): Promise<boolean> {
+  userId: ObjectId,
+): Promise<Contact | null> {
+  return getContactsCollection(db).findOne({
+    _id: contactId,
+    status: 'accepted',
+    $or: [
+      {
+        requesterId: userId,
+      },
+      {
+        recipientId: userId,
+      },
+    ],
+  });
+}
+
+export async function deleteContact(db: Db, contactId: ObjectId): Promise<boolean> {
   const result = await getContactsCollection(db).deleteOne({
     _id: contactId,
   });

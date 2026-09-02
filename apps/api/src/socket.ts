@@ -2,9 +2,7 @@ import { Server } from 'socket.io';
 import type { Server as HttpServer } from 'http';
 
 import { verifyToken } from './services/auth.service.js';
-import {
-  verifyConversationMembership,
-} from './services/conversation.service.js';
+import { verifyConversationMembership } from './services/conversation.service.js';
 import { sendMessage } from './services/message.service.js';
 
 interface SocketUser {
@@ -73,10 +71,7 @@ export function initializeSocket(httpServer: HttpServer): Server {
       }
 
       try {
-        const isMember = await verifyConversationMembership(
-          conversationId,
-          user.id,
-        );
+        const isMember = await verifyConversationMembership(conversationId, user.id);
 
         if (!isMember) {
           socket.emit('conversation_access_denied', {
@@ -89,9 +84,7 @@ export function initializeSocket(httpServer: HttpServer): Server {
 
         socket.join(`conversation:${conversationId}`);
 
-        console.log(
-          `${user.email} joined conversation ${conversationId}`,
-        );
+        console.log(`${user.email} joined conversation ${conversationId}`);
       } catch (error) {
         console.error('Socket join conversation error:', error);
 
@@ -116,10 +109,7 @@ export function initializeSocket(httpServer: HttpServer): Server {
       }
 
       try {
-        const isMember = await verifyConversationMembership(
-          conversationId,
-          user.id,
-        );
+        const isMember = await verifyConversationMembership(conversationId, user.id);
 
         if (!isMember) {
           return;
@@ -140,21 +130,16 @@ export function initializeSocket(httpServer: HttpServer): Server {
       }
 
       try {
-        const isMember = await verifyConversationMembership(
-          conversationId,
-          user.id,
-        );
+        const isMember = await verifyConversationMembership(conversationId, user.id);
 
         if (!isMember) {
           return;
         }
 
-        socket
-          .to(`conversation:${conversationId}`)
-          .emit('user_stopped_typing', {
-            conversationId,
-            userId: user.id,
-          });
+        socket.to(`conversation:${conversationId}`).emit('user_stopped_typing', {
+          conversationId,
+          userId: user.id,
+        });
       } catch (error) {
         console.error('Socket typing stop error:', error);
       }
@@ -167,11 +152,7 @@ export function initializeSocket(httpServer: HttpServer): Server {
           conversationId: string;
           content: string;
         },
-        callback?: (response: {
-          success: boolean;
-          message?: unknown;
-          error?: string;
-        }) => void,
+        callback?: (response: { success: boolean; message?: unknown; error?: string }) => void,
       ) => {
         try {
           if (!payload?.conversationId || !payload?.content) {
@@ -194,10 +175,7 @@ export function initializeSocket(httpServer: HttpServer): Server {
             return;
           }
 
-          const isMember = await verifyConversationMembership(
-            payload.conversationId,
-            user.id,
-          );
+          const isMember = await verifyConversationMembership(payload.conversationId, user.id);
 
           if (!isMember) {
             callback?.({
@@ -208,16 +186,9 @@ export function initializeSocket(httpServer: HttpServer): Server {
             return;
           }
 
-          const message = await sendMessage(
-            payload.conversationId,
-            user.id,
-            content,
-          );
+          const message = await sendMessage(payload.conversationId, user.id, content);
 
-          io.to(`conversation:${payload.conversationId}`).emit(
-            'new_message',
-            message,
-          );
+          io.to(`conversation:${payload.conversationId}`).emit('new_message', message);
 
           callback?.({
             success: true,
@@ -228,10 +199,7 @@ export function initializeSocket(httpServer: HttpServer): Server {
 
           callback?.({
             success: false,
-            error:
-              error instanceof Error
-                ? error.message
-                : 'Failed to send message',
+            error: error instanceof Error ? error.message : 'Failed to send message',
           });
         }
       },

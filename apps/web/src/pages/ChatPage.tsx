@@ -1,30 +1,50 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { connectSocket, disconnectSocket, getSocket } from '../lib/socket';
 import { useAuth } from '../hooks/use-auth';
 import type { Conversation } from '../types/conversation';
 import type { Message } from '../types/message';
 import type { ApiUser } from '../types/user';
 import { NexChatLogo } from '../components/nexchat-logo';
-import { ArrowRight, LoaderCircle } from 'lucide-react';
+import { ProfilePage } from './profile-page';
+import { SettingsPage } from './settings-page';
+import { ArrowRight, LoaderCircle, LogOut, Menu, Settings, Trash2, User } from 'lucide-react';
 import {
   acceptContactRequest,
   createDirectConversation,
+  getContactRequestStatus,
   getConversations,
   getIncomingContactRequests,
   getMessages,
   getUsers,
   rejectContactRequest,
+  removeContact,
+  sendContactRequest,
   type ContactRequest,
+  type ContactRequestStatus,
 } from '../lib/api';
+
+function matchesSearch(value: string | null | undefined, query: string) {
+  if (!query.trim()) {
+    return true;
+  }
+
+  return (value ?? '').toLowerCase().includes(query.trim().toLowerCase());
+}
 
 export function ChatPage() {
   const { user, logout } = useAuth();
+  const [showSettings, setShowSettings] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const [users, setUsers] = useState<ApiUser[]>([]);
   const [contactRequests, setContactRequests] = useState<ContactRequest[]>([]);
-  const [processingContactRequestId, setProcessingContactRequestId] =
-  useState<string | null>(null);
+  const [processingContactRequestId, setProcessingContactRequestId] = useState<string | null>(null);
+  const [contactStatuses, setContactStatuses] = useState<Record<string, ContactRequestStatus>>({});
+  const [processingContactUserId, setProcessingContactUserId] = useState<string | null>(null);
+  const [removingContactId, setRemovingContactId] = useState<string | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const conversationsRef = useRef<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [selectedUser, setSelectedUser] = useState<ApiUser | null>(null);
 
@@ -81,7 +101,7 @@ export function ChatPage() {
   }, [messages, loadingMessages, typingUserId]);
 
   /**
-   * Load users and conversations.
+   * Load users, conversations, and incoming contact requests.
    */
   useEffect(() => {
     let mounted = true;
@@ -90,15 +110,11 @@ export function ChatPage() {
       try {
         setError(null);
 
-      const [
-        loadedUsers,
-        loadedConversations,
-        loadedContactRequests,
-      ] = await Promise.all([
-        getUsers(),
-        getConversations(),
-        getIncomingContactRequests(),
-      ]);
+        const [loadedUsers, loadedConversations, loadedContactRequests] = await Promise.all([
+          getUsers(),
+          getConversations(),
+          getIncomingContactRequests(),
+        ]);
 
         if (!mounted) {
           return;
@@ -128,6 +144,46 @@ export function ChatPage() {
     };
   }, [user?.id]);
 
+  /**
+   * Load contact status for every visible user.
+   */
+  useEffect(() => {
+    if (users.length === 0) {
+      return;
+    }
+
+    let mounted = true;
+
+    const loadContactStatuses = async () => {
+      try {
+        const entries = await Promise.all(
+          users.map(async (item) => {
+            const status = await getContactRequestStatus(item.id);
+
+            return [item.id, status] as const;
+          }),
+        );
+
+        if (!mounted) {
+          return;
+        }
+
+        setContactStatuses(Object.fromEntries(entries));
+      } catch (err) {
+        if (!mounted) {
+          return;
+        }
+
+        setError(err instanceof Error ? err.message : 'Failed to load contact statuses');
+      }
+    };
+
+    void loadContactStatuses();
+
+    return () => {
+      mounted = false;
+    };
+  }, [users]);
   /**
    * Load latest message for every conversation.
    */
@@ -187,69 +243,47 @@ export function ChatPage() {
   }, [conversations]);
 
   useEffect(() => {
-  return () => {
-    if (typingTimeoutRef.current) {
-      clearTimeout(typingTimeoutRef.current);
-      typingTimeoutRef.current = null;
-    }
-  };
-}, []);
+    return () => {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   /**
    * Handle incoming realtime messages.
    */
   const handleNewMessage = useCallback(
     (message: Message) => {
-      console.log(
-        '[ChatPage] New message received:',
-        message,
-      );
+      console.log('[ChatPage] New message received:', message);
 
       /**
        * Move conversation to the top.
        */
       setConversations((currentConversations) => {
-        const conversationIndex =
-          currentConversations.findIndex(
-            (item) =>
-              item.id === message.conversationId,
-          );
+        const conversationIndex = currentConversations.findIndex(
+          (item) => item.id === message.conversationId,
+        );
 
         if (conversationIndex === -1) {
           return currentConversations;
         }
 
-        const conversation =
-          currentConversations[conversationIndex];
+        const conversation = currentConversations[conversationIndex];
 
         return [
           conversation,
-          ...currentConversations.filter(
-            (item) =>
-              item.id !== message.conversationId,
-          ),
+          ...currentConversations.filter((item) => item.id !== message.conversationId),
         ];
       });
 
-      const currentConversation =
-        selectedConversationRef.current;
+      const currentConversation = selectedConversationRef.current;
 
-      console.log(
-        '[ChatPage] Current conversation:',
-        currentConversation?.id,
-      );
-      console.log(
-        '[ChatPage] Incoming conversation:',
-        message.conversationId,
-      );
-      console.log(
-        '[ChatPage] Current user:',
-        user?.id,
-      );
-      console.log(
-        '[ChatPage] Message sender:',
-        message.senderId,
-      );
+      console.log('[ChatPage] Current conversation:', currentConversation?.id);
+      console.log('[ChatPage] Incoming conversation:', message.conversationId);
+      console.log('[ChatPage] Current user:', user?.id);
+      console.log('[ChatPage] Message sender:', message.senderId);
 
       /**
        * Update last message preview.
@@ -264,15 +298,10 @@ export function ChatPage() {
        * - message is from another user
        * - conversation is not currently opened
        */
-      if (
-        message.senderId !== user?.id &&
-        message.conversationId !==
-          currentConversation?.id
-      ) {
+      if (message.senderId !== user?.id && message.conversationId !== currentConversation?.id) {
         setUnreadCounts((current) => ({
           ...current,
-          [message.conversationId]:
-            (current[message.conversationId] ?? 0) + 1,
+          [message.conversationId]: (current[message.conversationId] ?? 0) + 1,
         }));
       }
 
@@ -283,26 +312,16 @@ export function ChatPage() {
         return;
       }
 
-      if (
-        message.conversationId !==
-        currentConversation.id
-      ) {
+      if (message.conversationId !== currentConversation.id) {
         return;
       }
 
       setMessages((currentMessages) => {
-        if (
-          currentMessages.some(
-            (item) => item.id === message.id,
-          )
-        ) {
+        if (currentMessages.some((item) => item.id === message.id)) {
           return currentMessages;
         }
 
-        return [
-          ...currentMessages,
-          message,
-        ];
+        return [...currentMessages, message];
       });
     },
     [user?.id],
@@ -319,27 +338,16 @@ export function ChatPage() {
         return;
       }
 
-      if (
-        !conversation.participants.some(
-          (participant) => participant.id === userId,
-        )
-      ) {
+      if (!conversation.participants.some((participant) => participant.id === userId)) {
         return;
       }
 
       setConversations((currentConversations) => {
-        if (
-          currentConversations.some(
-            (item) => item.id === conversation.id,
-          )
-        ) {
+        if (currentConversations.some((item) => item.id === conversation.id)) {
           return currentConversations;
         }
 
-        return [
-          conversation,
-          ...currentConversations,
-        ];
+        return [conversation, ...currentConversations];
       });
     },
     [user?.id],
@@ -393,12 +401,84 @@ export function ChatPage() {
     [user?.id],
   );
 
+  useEffect(() => {
+    conversationsRef.current = conversations;
+  }, [conversations]);
+
+  /**
+   * Remove a conversation and reset the active chat state.
+   */
+  const removeConversationFromState = useCallback((conversationId: string) => {
+    setConversations((current) =>
+      current.filter((conversation) => conversation.id !== conversationId),
+    );
+
+    setUnreadCounts((current) => {
+      if (!(conversationId in current)) {
+        return current;
+      }
+
+      const next = { ...current };
+      delete next[conversationId];
+      return next;
+    });
+
+    setLastMessages((current) => {
+      if (!(conversationId in current)) {
+        return current;
+      }
+
+      const next = { ...current };
+      delete next[conversationId];
+      return next;
+    });
+
+    if (selectedConversationRef.current?.id === conversationId) {
+      selectedConversationRef.current = null;
+      setSelectedConversation(null);
+      setSelectedUser(null);
+      setMessages([]);
+      setContent('');
+      setTypingUserId(null);
+
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = null;
+      }
+    }
+  }, []);
+
+  /**
+   * Remove the conversation associated with a specific contact.
+   */
+  const removeConversationWithUserFromState = useCallback(
+    (userId: string) => {
+      const conversation = conversationsRef.current.find((item) =>
+        item.participants.some((participant) => participant.id === userId),
+      );
+
+      if (conversation?.id) {
+        removeConversationFromState(conversation.id);
+        return;
+      }
+
+      const selectedConversation = selectedConversationRef.current;
+
+      if (
+        selectedConversation?.id &&
+        selectedConversation.participants.some((participant) => participant.id === userId)
+      ) {
+        removeConversationFromState(selectedConversation.id);
+      }
+    },
+    [removeConversationFromState],
+  );
+
   /**
    * Connect native WebSocket once when ChatPage mounts.
    */
   useEffect(() => {
-    const token =
-      localStorage.getItem('nexchat_token');
+    const token = localStorage.getItem('nexchat_token');
 
     if (!token) {
       return;
@@ -413,50 +493,112 @@ export function ChatPage() {
             break;
 
           case 'new_conversation':
-            handleNewConversation(
-              event.conversation,
-            );
+            handleNewConversation(event.conversation);
             break;
+
+          case 'contact_request_received':
+            setContactRequests((current) => {
+              const exists = current.some((request) => request.id === event.request.id);
+
+              if (exists) {
+                return current;
+              }
+
+              return [event.request, ...current];
+            });
+            break;
+
+          case 'contact_request_accepted':
+            setContactRequests((current) =>
+              current.filter((request) => request.id !== event.request.id),
+            );
+
+            setConversations((current) => {
+              const exists = current.some(
+                (conversation) => conversation.id === event.conversation.id,
+              );
+
+              if (exists) {
+                return current.map((conversation) =>
+                  conversation.id === event.conversation.id ? event.conversation : conversation,
+                );
+              }
+
+              return [event.conversation, ...current];
+            });
+
+            break;
+
+          case 'contact_request_rejected': {
+            const rejectedOtherUserId =
+              event.request.senderId === user?.id
+                ? event.request.receiverId
+                : event.request.senderId;
+
+            setContactRequests((current) =>
+              current.filter((request) => request.id !== event.request.id),
+            );
+
+            setContactStatuses((current) => ({
+              ...current,
+              [rejectedOtherUserId]: {
+                status: 'none',
+                direction: null,
+                requestId: null,
+              },
+            }));
+
+            break;
+          }
+
+          case 'contact_removed': {
+            const removedOtherUserId =
+              event.contact.senderId === user?.id
+                ? event.contact.receiverId
+                : event.contact.senderId;
+
+            setContactStatuses((current) => ({
+              ...current,
+              [removedOtherUserId]: {
+                status: 'none',
+                direction: null,
+                requestId: null,
+              },
+            }));
+
+            removeConversationWithUserFromState(removedOtherUserId);
+
+            break;
+          }
 
           case 'user_typing':
             handleUserTyping({
-              conversationId:
-                event.conversationId,
+              conversationId: event.conversationId,
               userId: event.userId,
             });
             break;
 
           case 'user_stopped_typing':
             handleUserStoppedTyping({
-              conversationId:
-                event.conversationId,
+              conversationId: event.conversationId,
               userId: event.userId,
             });
             break;
 
           case 'conversation_access_denied':
-            console.error(
-              '[WebSocket] Conversation access denied:',
-              event.message,
-            );
+            console.error('[WebSocket] Conversation access denied:', event.message);
 
             setError(event.message);
             break;
 
           case 'error':
-            console.error(
-              '[WebSocket] Server error:',
-              event.message,
-            );
+            console.error('[WebSocket] Server error:', event.message);
 
             setError(event.message);
             break;
 
           case 'ack':
-            console.log(
-              '[WebSocket] ACK:',
-              event.received,
-            );
+            console.log('[WebSocket] ACK:', event.received);
             break;
 
           default:
@@ -485,6 +627,8 @@ export function ChatPage() {
     handleNewMessage,
     handleUserStoppedTyping,
     handleUserTyping,
+    removeConversationWithUserFromState,
+    user?.id,
   ]);
 
   /**
@@ -493,11 +637,7 @@ export function ChatPage() {
   useEffect(() => {
     const socket = getSocket();
 
-    if (
-      !socketConnected ||
-      !socket ||
-      socket.readyState !== WebSocket.OPEN
-    ) {
+    if (!socketConnected || !socket || socket.readyState !== WebSocket.OPEN) {
       return;
     }
 
@@ -512,10 +652,7 @@ export function ChatPage() {
       }),
     );
 
-    console.log(
-      '[WebSocket] Joined selected conversation:',
-      selectedConversation.id,
-    );
+    console.log('[WebSocket] Joined selected conversation:', selectedConversation.id);
 
     return () => {
       if (socket.readyState === WebSocket.OPEN) {
@@ -526,18 +663,71 @@ export function ChatPage() {
           }),
         );
 
-        console.log(
-          '[WebSocket] Left conversation:',
-          selectedConversation.id,
-        );
+        console.log('[WebSocket] Left conversation:', selectedConversation.id);
       }
     };
   }, [selectedConversation?.id, socketConnected]);
+  /**
+   * Open an existing conversation from the sidebar.
+   */
+  const openExistingConversation = async (conversation: Conversation) => {
+    if (!conversation.id || creatingConversation) {
+      return;
+    }
+
+    try {
+      setCreatingConversation(true);
+      setError(null);
+      setTypingUserId(null);
+      setMessages([]);
+
+      const conversationUser = getConversationUser(conversation);
+
+      setSelectedUser(conversationUser);
+
+      setUnreadCounts((current) => {
+        if (!(conversation.id! in current)) {
+          return current;
+        }
+
+        const next = { ...current };
+        delete next[conversation.id!];
+
+        return next;
+      });
+
+      setSelectedConversation(conversation);
+
+      setLoadingMessages(true);
+
+      const loadedMessages = await getMessages(conversation.id);
+
+      setMessages(loadedMessages);
+
+      if (loadedMessages.length > 0) {
+        setLastMessages((currentLastMessages) => ({
+          ...currentLastMessages,
+          [conversation.id!]: loadedMessages[loadedMessages.length - 1],
+        }));
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to open conversation');
+    } finally {
+      setCreatingConversation(false);
+      setLoadingMessages(false);
+    }
+  };
+
   /**
    * Open conversation.
    */
   const openConversation = async (selectedUser: ApiUser) => {
     if (creatingConversation) {
+      return;
+    }
+    const contactStatus = contactStatuses[selectedUser.id];
+
+    if (contactStatus?.status !== 'accepted') {
       return;
     }
 
@@ -594,6 +784,78 @@ export function ChatPage() {
       setLoadingMessages(false);
     }
   };
+  /**
+   * Handle contact removal from the local user.
+   */
+  const handleRemoveContact = async (contactId: string) => {
+    if (removingContactId) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      'Remove this contact? The conversation will also be removed from your chat list.',
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setRemovingContactId(contactId);
+      setError(null);
+
+      const removedContact = await removeContact(contactId);
+
+      const removedOtherUserId =
+        removedContact.senderId === user?.id ? removedContact.receiverId : removedContact.senderId;
+
+      const targetUserId = removedOtherUserId || otherUserId;
+
+      setContactStatuses((current) => ({
+        ...current,
+        [targetUserId]: {
+          status: 'none',
+          direction: null,
+          requestId: null,
+        },
+      }));
+
+      removeConversationWithUserFromState(targetUserId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to remove contact');
+    } finally {
+      setRemovingContactId(null);
+    }
+  };
+
+  /**
+   * Send contact request.
+   */
+  const handleSendContactRequest = async (userId: string) => {
+    if (processingContactUserId) {
+      return;
+    }
+
+    try {
+      setProcessingContactUserId(userId);
+      setError(null);
+
+      const request = await sendContactRequest(userId);
+
+      setContactStatuses((current) => ({
+        ...current,
+        [userId]: {
+          status: 'pending',
+          direction: 'outgoing',
+          requestId: request.id,
+        },
+      }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to send contact request');
+    } finally {
+      setProcessingContactUserId(null);
+    }
+  };
 
   /**
    * Send message.
@@ -601,12 +863,7 @@ export function ChatPage() {
   const handleSendMessage = async () => {
     const trimmedContent = content.trim();
 
-    if (
-      !selectedConversation ||
-      !trimmedContent ||
-      sending ||
-      !socketConnected
-    ) {
+    if (!selectedConversation || !trimmedContent || sending || !socketConnected) {
       return;
     }
 
@@ -639,11 +896,7 @@ export function ChatPage() {
       setContent('');
       setTypingUserId(null);
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : 'Failed to send message',
-      );
+      setError(err instanceof Error ? err.message : 'Failed to send message');
     } finally {
       setSending(false);
     }
@@ -659,6 +912,14 @@ export function ChatPage() {
       .slice(0, 2)
       .map((part) => part.charAt(0).toUpperCase())
       .join('');
+  }
+
+  function renderAvatar(name: string, avatarUrl?: string | null, className = 'avatar') {
+    if (avatarUrl) {
+      return <img src={avatarUrl} alt={`${name} avatar`} className={`${className} avatar-image`} />;
+    }
+
+    return <div className={className}>{getInitials(name)}</div>;
   }
 
   /**
@@ -731,10 +992,7 @@ export function ChatPage() {
     typingTimeoutRef.current = setTimeout(() => {
       const currentSocket = getSocket();
 
-      if (
-        currentSocket &&
-        currentSocket.readyState === WebSocket.OPEN
-      ) {
+      if (currentSocket && currentSocket.readyState === WebSocket.OPEN) {
         currentSocket.send(
           JSON.stringify({
             type: 'typing_stop',
@@ -747,7 +1005,7 @@ export function ChatPage() {
     }, 700);
   };
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     void handleSendMessage();
@@ -761,68 +1019,49 @@ export function ChatPage() {
       return null;
     }
 
-    return (
-      conversation.participants.find(
-        (participant) => participant.id !== user.id,
-      )?.id ?? null
-    );
+    return conversation.participants.find((participant) => participant.id !== user.id)?.id ?? null;
   };
 
-  const handleAcceptContactRequest = async (
-  requestId: string,
-) => {
-  try {
-    setProcessingContactRequestId(requestId);
-    setError(null);
+  const handleAcceptContactRequest = async (requestId: string) => {
+    try {
+      setProcessingContactRequestId(requestId);
+      setError(null);
 
-    await acceptContactRequest(requestId);
+      const result = await acceptContactRequest(requestId);
 
-    setContactRequests((current) =>
-      current.filter(
-        (request) =>
-          request.id !== requestId,
-      ),
-    );
+      setContactRequests((current) => current.filter((request) => request.id !== requestId));
 
-    const updatedConversations =
-      await getConversations();
+      setConversations((current) => {
+        const exists = current.some((conversation) => conversation.id === result.conversation.id);
 
-    setConversations(updatedConversations);
-  } catch (err) {
-    setError(
-      err instanceof Error
-        ? err.message
-        : 'Failed to accept contact request',
-    );
-  } finally {
-    setProcessingContactRequestId(null);
-  }
-};
-const handleRejectContactRequest = async (
-  requestId: string,
-) => {
-  try {
-    setProcessingContactRequestId(requestId);
-    setError(null);
+        if (exists) {
+          return current.map((conversation) =>
+            conversation.id === result.conversation.id ? result.conversation : conversation,
+          );
+        }
 
-    await rejectContactRequest(requestId);
+        return [result.conversation, ...current];
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to accept contact request');
+    } finally {
+      setProcessingContactRequestId(null);
+    }
+  };
+  const handleRejectContactRequest = async (requestId: string) => {
+    try {
+      setProcessingContactRequestId(requestId);
+      setError(null);
 
-    setContactRequests((current) =>
-      current.filter(
-        (request) =>
-          request.id !== requestId,
-      ),
-    );
-  } catch (err) {
-    setError(
-      err instanceof Error
-        ? err.message
-        : 'Failed to reject contact request',
-    );
-  } finally {
-    setProcessingContactRequestId(null);
-  }
-};
+      await rejectContactRequest(requestId);
+
+      setContactRequests((current) => current.filter((request) => request.id !== requestId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to reject contact request');
+    } finally {
+      setProcessingContactRequestId(null);
+    }
+  };
 
   /**
    * Get the user associated with a conversation.
@@ -858,8 +1097,24 @@ const handleRejectContactRequest = async (
     return lastMessage.content;
   };
 
+  if (showProfile) {
+    return (
+      <ProfilePage
+        onBack={() => setShowProfile(false)}
+        onEdit={() => {
+          setShowProfile(false);
+          setShowSettings(true);
+        }}
+      />
+    );
+  }
+
+  if (showSettings) {
+    return <SettingsPage onBack={() => setShowSettings(false)} />;
+  }
+
   return (
-    <div className="chat-page">
+    <div className={selectedConversation ? 'chat-page has-selected-conversation' : 'chat-page'}>
       <header className="chat-header">
         <div className="chat-header-brand">
           <NexChatLogo size={48} showText={true} />
@@ -881,9 +1136,70 @@ const handleRejectContactRequest = async (
           </div>
         </div>
 
-        <button type="button" className="logout-button" onClick={logout}>
-          Logout
-        </button>
+        <div className="chat-header-menu">
+          <button
+            type="button"
+            className="menu-button"
+            onClick={() => setMenuOpen((current) => !current)}
+            aria-label="Open menu"
+            aria-expanded={menuOpen}
+          >
+            <Menu size={24} />
+          </button>
+
+          {menuOpen && (
+            <div className="user-menu">
+              <div className="user-menu-profile">
+                {renderAvatar(user?.name ?? 'User', user?.avatarUrl, 'menu-avatar')}
+
+                <div>
+                  <strong>{user?.name}</strong>
+                  <span>{user?.email}</span>
+                </div>
+              </div>
+
+              <div className="user-menu-divider" />
+
+              <button
+                type="button"
+                className="user-menu-item"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setShowProfile(true);
+                }}
+              >
+                <User size={18} />
+                <span>Profile</span>
+              </button>
+
+              <button
+                type="button"
+                className="user-menu-item"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setShowSettings(true);
+                }}
+              >
+                <Settings size={18} />
+                <span>Settings</span>
+              </button>
+
+              <div className="user-menu-divider" />
+
+              <button
+                type="button"
+                className="user-menu-item danger"
+                onClick={() => {
+                  setMenuOpen(false);
+                  logout();
+                }}
+              >
+                <LogOut size={18} />
+                <span>Logout</span>
+              </button>
+            </div>
+          )}
+        </div>
       </header>
 
       <div className="chat-layout">
@@ -903,127 +1219,133 @@ const handleRejectContactRequest = async (
           </div>
 
           {contactRequests.length > 0 && (
-  <>
-    <div className="conversation-sidebar-header">
-      <h2>Contact Requests</h2>
-    </div>
-
-    <div className="contact-request-list">
-      {contactRequests.map((request) => {
-      const requester = users.find(
-        (item) =>
-          item.id === request.senderId,
-      );
-
-        const isProcessing =
-          processingContactRequestId ===
-          request.id;
-
-        return (
-          <div
-            key={request.id}
-            className="contact-request-item"
-          >
-            <div className="conversation-user-row">
-              <div className="avatar">
-                {getInitials(
-                  requester?.name ??
-                    'User',
-                )}
+            <>
+              <div className="conversation-sidebar-header">
+                <h2>Contact Requests</h2>
               </div>
 
-              <div className="conversation-user-info">
-                <strong>
-                  {requester?.name ??
-                    'Unknown user'}
-                </strong>
+              <div className="contact-request-list">
+                {contactRequests.map((request) => {
+                  const requester = users.find((item) => item.id === request.senderId);
 
-                <span>
-                  {requester?.email ??
-                    'Contact request'}
-                </span>
+                  const isProcessing = processingContactRequestId === request.id;
+
+                  return (
+                    <div key={request.id} className="contact-request-item">
+                      <div className="conversation-user-row">
+                        {renderAvatar(requester?.name ?? 'User', requester?.avatarUrl)}
+
+                        <div className="conversation-user-info">
+                          <strong>{requester?.name ?? 'Unknown user'}</strong>
+
+                          <span>{requester?.email ?? 'Contact request'}</span>
+                        </div>
+                      </div>
+
+                      <div className="contact-request-actions">
+                        <button
+                          type="button"
+                          className="contact-accept-button"
+                          disabled={isProcessing}
+                          onClick={() => void handleAcceptContactRequest(request.id)}
+                        >
+                          {isProcessing ? '...' : 'Accept'}
+                        </button>
+
+                        <button
+                          type="button"
+                          className="contact-reject-button"
+                          disabled={isProcessing}
+                          onClick={() => void handleRejectContactRequest(request.id)}
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            </div>
-
-            <div className="contact-request-actions">
-              <button
-                type="button"
-                className="contact-accept-button"
-                disabled={isProcessing}
-                onClick={() =>
-                  void handleAcceptContactRequest(
-                    request.id,
-                  )
-                }
-              >
-                {isProcessing
-                  ? '...'
-                  : 'Accept'}
-              </button>
-
-              <button
-                type="button"
-                className="contact-reject-button"
-                disabled={isProcessing}
-                onClick={() =>
-                  void handleRejectContactRequest(
-                    request.id,
-                  )
-                }
-              >
-                Reject
-              </button>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  </>
-)}
+            </>
+          )}
 
           <div className="conversation-sidebar-header">
             <h2>New Conversation</h2>
           </div>
-
-          {loadingUsers && <p className="sidebar-status">Loading users...</p>}
-
-          {!loadingUsers && users.length === 0 && (
-            <p className="sidebar-status">No other users found.</p>
-          )}
 
           {!loadingUsers &&
             users
               .filter((item) => {
                 const query = searchQuery.trim().toLowerCase();
 
+                const hasConversation = conversations.some((conversation) =>
+                  conversation.participants.some((participant) => participant.id === item.id),
+                );
+
+                if (hasConversation) {
+                  return false;
+                }
+
                 if (!query) {
                   return true;
                 }
 
-                return (
-                  item.name.toLowerCase().includes(query) ||
-                  item.email.toLowerCase().includes(query)
-                );
+                return matchesSearch(item.name, query) || matchesSearch(item.email, query);
               })
-              .map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className="conversation-item"
-                  onClick={() => void openConversation(item)}
-                  disabled={creatingConversation}
-                >
-                  <div className="conversation-user-row">
-                    <div className="avatar">{getInitials(item.name)}</div>
+              .map((item) => {
+                const contactStatus = contactStatuses[item.id];
+                const isProcessing = processingContactUserId === item.id;
 
-                    <div className="conversation-user-info">
-                      <strong>{item.name}</strong>
-                      <span>{item.email}</span>
+                const isAccepted = contactStatus?.status === 'accepted';
+
+                const isPending = contactStatus?.status === 'pending';
+
+                const isIncoming = isPending && contactStatus?.direction === 'incoming';
+
+                const isOutgoing = isPending && contactStatus?.direction === 'outgoing';
+
+                return (
+                  <div key={item.id} className="conversation-item">
+                    <div className="conversation-user-row">
+                      {renderAvatar(item.name, item.avatarUrl)}
+
+                      <div className="conversation-user-info">
+                        <strong>{item.name}</strong>
+                        <span>{item.email}</span>
+                      </div>
+                    </div>
+
+                    <div className="contact-user-action">
+                      {isAccepted && (
+                        <button
+                          type="button"
+                          className="contact-chat-button"
+                          onClick={() => void openConversation(item)}
+                          disabled={creatingConversation}
+                        >
+                          Chat
+                        </button>
+                      )}
+
+                      {isOutgoing && <span className="contact-status-label">Request Pending</span>}
+
+                      {isIncoming && (
+                        <span className="contact-status-label">Accept request above</span>
+                      )}
+
+                      {!isAccepted && !isPending && (
+                        <button
+                          type="button"
+                          className="contact-add-button"
+                          onClick={() => void handleSendContactRequest(item.id)}
+                          disabled={isProcessing}
+                        >
+                          {isProcessing ? '...' : 'Add Contact'}
+                        </button>
+                      )}
                     </div>
                   </div>
-                </button>
-              ))}
-
+                );
+              })}
           <div className="conversation-sidebar-header">
             <h2>Conversations</h2>
           </div>
@@ -1034,42 +1356,60 @@ const handleRejectContactRequest = async (
             <p className="sidebar-status">No conversations yet.</p>
           )}
 
-          {conversations.map((conversation) => {
-            const conversationUser = getConversationUser(conversation);
+          {conversations
+            .filter((conversation) => {
+              const query = searchQuery.trim().toLowerCase();
 
-            const unreadCount = conversation.id ? (unreadCounts[conversation.id] ?? 0) : 0;
+              if (!query) {
+                return true;
+              }
 
-            return (
-              <button
-                key={conversation.id}
-                type="button"
-                className={
-                  selectedConversation?.id === conversation.id
-                    ? 'conversation-item active'
-                    : 'conversation-item'
-                }
-                onClick={() => {
-                  if (conversationUser) {
-                    void openConversation(conversationUser);
+              const conversationUser = getConversationUser(conversation);
+
+              return (
+                matchesSearch(conversationUser?.name, query) ||
+                matchesSearch(conversationUser?.email, query) ||
+                matchesSearch(getLastMessagePreview(conversation), query)
+              );
+            })
+            .map((conversation) => {
+              const conversationUser = getConversationUser(conversation);
+              const conversationAvatarUser = conversationUser
+                ? users.find((item) => item.id === conversationUser.id)
+                : undefined;
+
+              const unreadCount = conversation.id ? (unreadCounts[conversation.id] ?? 0) : 0;
+
+              return (
+                <button
+                  key={conversation.id}
+                  type="button"
+                  className={
+                    selectedConversation?.id === conversation.id
+                      ? 'conversation-item active'
+                      : 'conversation-item'
                   }
-                }}
-              >
-                <div className="conversation-user-row">
-                  <div className="avatar">
-                    {getInitials(conversationUser?.name ?? 'Conversation')}
+                  onClick={() => {
+                    void openExistingConversation(conversation);
+                  }}
+                >
+                  <div className="conversation-user-row">
+                    {renderAvatar(
+                      conversationUser?.name ?? 'Conversation',
+                      conversationAvatarUser?.avatarUrl,
+                    )}
+
+                    <div className="conversation-user-info">
+                      <strong>{conversationUser?.name ?? 'Conversation'}</strong>
+
+                      <span>{getLastMessagePreview(conversation)}</span>
+                    </div>
+
+                    {unreadCount > 0 && <span className="unread-badge">{unreadCount}</span>}
                   </div>
-
-                  <div className="conversation-user-info">
-                    <strong>{conversationUser?.name ?? 'Conversation'}</strong>
-
-                    <span>{getLastMessagePreview(conversation)}</span>
-                  </div>
-
-                  {unreadCount > 0 && <span className="unread-badge">{unreadCount}</span>}
-                </div>
-              </button>
-            );
-          })}
+                </button>
+              );
+            })}
         </aside>
 
         <section className="chat-window">
@@ -1084,11 +1424,47 @@ const handleRejectContactRequest = async (
           {selectedConversation && (
             <>
               <div className="chat-window-header">
-                <div>
+                <button
+                  type="button"
+                  className="mobile-back-button"
+                  onClick={() => {
+                    setSelectedConversation(null);
+                    setSelectedUser(null);
+                    setMessages([]);
+                    setTypingUserId(null);
+                  }}
+                  aria-label="Back to conversations"
+                >
+                  ←
+                </button>
+
+                {selectedUser && renderAvatar(selectedUser.name, selectedUser.avatarUrl)}
+
+                <div className="chat-window-header-info">
                   <h2>{selectedUser?.name ?? 'Conversation'}</h2>
 
                   {selectedUser && <small>{selectedUser.email}</small>}
                 </div>
+
+                {selectedUser &&
+                  contactStatuses[selectedUser.id]?.status === 'accepted' &&
+                  contactStatuses[selectedUser.id]?.requestId && (
+                    <button
+                      type="button"
+                      className="contact-remove-button"
+                      onClick={() =>
+                        void handleRemoveContact(
+                          contactStatuses[selectedUser.id].requestId as string,
+                        )
+                      }
+                      disabled={removingContactId !== null}
+                      aria-label={`Remove ${selectedUser.name} from contacts`}
+                      title="Remove contact"
+                    >
+                      <Trash2 size={17} aria-hidden="true" />
+                      <span>{removingContactId ? 'Removing...' : 'Remove'}</span>
+                    </button>
+                  )}
               </div>
 
               <div className="message-list">

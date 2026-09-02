@@ -1,9 +1,7 @@
 import type { Conversation } from '../types/conversation';
 import type { Message } from '../types/message';
 
-const WS_URL =
-  import.meta.env.VITE_WS_URL ||
-  'ws://localhost:8787/ws';
+const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8787/ws';
 
 export type RealtimeEvent =
   | {
@@ -42,12 +40,37 @@ export type RealtimeEvent =
     }
   | {
       type: 'contact_request_accepted';
-      requestId: string;
+      request: {
+        id: string;
+        senderId: string;
+        receiverId: string;
+        status: 'pending' | 'accepted' | 'rejected';
+        createdAt: string;
+        updatedAt: string;
+      };
       conversation: Conversation;
     }
   | {
       type: 'contact_request_rejected';
-      requestId: string;
+      request: {
+        id: string;
+        senderId: string;
+        receiverId: string;
+        status: 'pending' | 'accepted' | 'rejected';
+        createdAt: string;
+        updatedAt: string;
+      };
+    }
+  | {
+      type: 'contact_removed';
+      contact: {
+        id: string;
+        senderId: string;
+        receiverId: string;
+        status: 'accepted';
+        createdAt: string;
+        updatedAt: string;
+      };
     }
   | {
       type: 'joined_conversation';
@@ -75,22 +98,15 @@ export type SocketLike = {
 let socket: WebSocket | null = null;
 let socketLike: SocketLike | null = null;
 
-function createSocketLike(
-  currentSocket: WebSocket,
-): SocketLike {
+function createSocketLike(currentSocket: WebSocket): SocketLike {
   return {
     get readyState() {
       return currentSocket.readyState;
     },
 
     send(data: string) {
-      if (
-        currentSocket.readyState !==
-        WebSocket.OPEN
-      ) {
-        console.warn(
-          '[WebSocket] Cannot send message: socket is not open',
-        );
+      if (currentSocket.readyState !== WebSocket.OPEN) {
+        console.warn('[WebSocket] Cannot send message: socket is not open');
 
         return;
       }
@@ -100,10 +116,8 @@ function createSocketLike(
 
     close() {
       if (
-        currentSocket.readyState ===
-          WebSocket.OPEN ||
-        currentSocket.readyState ===
-          WebSocket.CONNECTING
+        currentSocket.readyState === WebSocket.OPEN ||
+        currentSocket.readyState === WebSocket.CONNECTING
       ) {
         currentSocket.close();
       }
@@ -126,14 +140,8 @@ export function connectSocket(
    * already connected or connecting.
    */
   if (socket) {
-    if (
-      socket.readyState ===
-        WebSocket.OPEN ||
-      socket.readyState ===
-        WebSocket.CONNECTING
-    ) {
-      socketLike ??=
-        createSocketLike(socket);
+    if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+      socketLike ??= createSocketLike(socket);
 
       return socketLike;
     }
@@ -143,76 +151,45 @@ export function connectSocket(
     socketLike = null;
   }
 
-  const separator =
-    WS_URL.includes('?') ? '&' : '?';
+  const separator = WS_URL.includes('?') ? '&' : '?';
 
-  const url =
-    `${WS_URL}${separator}token=${encodeURIComponent(token)}`;
+  const url = `${WS_URL}${separator}token=${encodeURIComponent(token)}`;
 
-  console.log(
-    '[WebSocket] Connecting:',
-    WS_URL,
-  );
+  console.log('[WebSocket] Connecting:', WS_URL);
 
-  const currentSocket =
-    new WebSocket(url);
+  const currentSocket = new WebSocket(url);
 
   socket = currentSocket;
 
   currentSocket.onopen = () => {
-    console.log(
-      '[WebSocket] Connected',
-    );
+    console.log('[WebSocket] Connected');
 
     onOpen?.();
   };
 
-  currentSocket.onmessage = (
-    event: MessageEvent,
-  ) => {
+  currentSocket.onmessage = (event: MessageEvent) => {
     try {
-      const data =
-        JSON.parse(
-          event.data as string,
-        ) as RealtimeEvent;
+      const data = JSON.parse(event.data as string) as RealtimeEvent;
 
-      console.log(
-        '[WebSocket] Message:',
-        data,
-      );
+      console.log('[WebSocket] Message:', data);
 
       onMessage(data);
     } catch (error) {
-      console.error(
-        '[WebSocket] Invalid server message:',
-        error,
-      );
+      console.error('[WebSocket] Invalid server message:', error);
     }
   };
 
-  currentSocket.onerror = (
-    error,
-  ) => {
-    console.error(
-      '[WebSocket] Connection error:',
-      error,
-    );
+  currentSocket.onerror = (error) => {
+    console.error('[WebSocket] Connection error:', error);
 
     onMessage({
       type: 'error',
-      message:
-        'WebSocket connection error',
+      message: 'WebSocket connection error',
     });
   };
 
-  currentSocket.onclose = (
-    event,
-  ) => {
-    console.log(
-      '[WebSocket] Disconnected:',
-      event.code,
-      event.reason,
-    );
+  currentSocket.onclose = (event) => {
+    console.log('[WebSocket] Disconnected:', event.code, event.reason);
 
     onClose?.();
 
@@ -222,8 +199,7 @@ export function connectSocket(
     }
   };
 
-  socketLike =
-    createSocketLike(currentSocket);
+  socketLike = createSocketLike(currentSocket);
 
   return socketLike;
 }
@@ -236,12 +212,8 @@ export function disconnectSocket(): void {
 
   if (
     currentSocket &&
-    (
-      currentSocket.readyState ===
-        WebSocket.OPEN ||
-      currentSocket.readyState ===
-        WebSocket.CONNECTING
-    )
+    (currentSocket.readyState === WebSocket.OPEN ||
+      currentSocket.readyState === WebSocket.CONNECTING)
   ) {
     currentSocket.close();
   }

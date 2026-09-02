@@ -27,9 +27,7 @@ const getConversationsCollection = (): Collection<Conversation> => {
   return getMongoDb().collection<Conversation>('conversations');
 };
 
-const toConversationResponse = (
-  conversation: Conversation,
-): ConversationResponse => {
+const toConversationResponse = (conversation: Conversation): ConversationResponse => {
   if (!conversation._id) {
     throw new Error('Conversation ID is missing');
   }
@@ -53,9 +51,7 @@ export const findConversationByParticipants = async (
     },
   });
 
-  return conversation
-    ? toConversationResponse(conversation)
-    : null;
+  return conversation ? toConversationResponse(conversation) : null;
 };
 
 export const createConversation = async (
@@ -70,9 +66,7 @@ export const createConversation = async (
     updatedAt: now,
   };
 
-  const result = await getConversationsCollection().insertOne(
-    conversation,
-  );
+  const result = await getConversationsCollection().insertOne(conversation);
 
   return toConversationResponse({
     ...conversation,
@@ -97,11 +91,10 @@ export const isUserInConversation = async (
   conversationId: ObjectId,
   userId: ObjectId,
 ): Promise<boolean> => {
-  const conversation =
-    await getConversationsCollection().findOne({
-      _id: conversationId,
-      participants: userId,
-    });
+  const conversation = await getConversationsCollection().findOne({
+    _id: conversationId,
+    participants: userId,
+  });
 
   return conversation !== null;
 };

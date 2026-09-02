@@ -1,8 +1,8 @@
-import { useRef, useState } from 'react';
-import { ArrowLeft, Camera, Save } from 'lucide-react';
+import { ArrowLeft, Camera, Check, Mail, Save, User } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 
-import { NexChatLogo } from '../components/nexchat-logo';
 import { useAuth } from '../hooks/use-auth';
+import { uploadAvatar } from '../lib/api';
 
 interface SettingsPageProps {
   onBack: () => void;
@@ -12,27 +12,22 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
   const { user, updateUser } = useAuth();
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const nameInputRef = useRef<HTMLInputElement | null>(null);
 
-  const [name, setName] = useState(user?.name ?? '');
-  const [previewUrl, setPreviewUrl] = useState<string | null>(
-    user?.avatarUrl ?? null,
-  );
+  const [avatarPreview, setAvatarPreview] = useState(user?.avatarUrl ?? '');
+  const [selectedAvatarFile, setSelectedAvatarFile] = useState<File | null>(null);
+
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
+  const [success, setSuccess] = useState('');
+  const [error, setError] = useState('');
 
-  const getInitials = (value: string) => {
-    return value
-      .trim()
-      .split(/\s+/)
-      .slice(0, 2)
-      .map((part) => part.charAt(0).toUpperCase())
-      .join('');
-  };
+  useEffect(() => {
+    if (!selectedAvatarFile) {
+      setAvatarPreview(user?.avatarUrl ?? '');
+    }
+  }, [selectedAvatarFile, user?.avatarUrl]);
 
-  const handlePhotoChange = (
-    event: React.ChangeEvent<HTMLInputElement>,
-  ) => {
+  const handlePhotoChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
 
     if (!file) {
@@ -40,217 +35,182 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
     }
 
     if (!file.type.startsWith('image/')) {
-      setError('Please select a valid image file.');
+      setError('Please select an image file.');
       return;
     }
 
-    if (file.size > 2 * 1024 * 1024) {
-      setError('Profile photo must be smaller than 2 MB.');
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Image size must be less than 5MB.');
       return;
     }
 
-    setError(null);
-    setSuccess(false);
+    setError('');
+    setSuccess('');
+    setSelectedAvatarFile(file);
 
     const reader = new FileReader();
 
     reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setPreviewUrl(reader.result);
-      }
+      setAvatarPreview(reader.result as string);
     };
 
     reader.readAsDataURL(file);
   };
 
-  const handleSave = async (
-    event: React.FormEvent<HTMLFormElement>,
-  ) => {
+  const handleSave = async (event: React.FormEvent) => {
     event.preventDefault();
 
-    const trimmedName = name.trim();
+    const nextName = nameInputRef.current?.value.trim() ?? '';
 
-    if (trimmedName.length < 2) {
-      setError('Name must be at least 2 characters.');
+    setError('');
+    setSuccess('');
+
+    if (!nextName) {
+      setError('Name is required.');
       return;
     }
 
+    setSaving(true);
+
     try {
-      setSaving(true);
-      setError(null);
-      setSuccess(false);
+      let avatarUrl = user?.avatarUrl ?? null;
+
+      if (selectedAvatarFile) {
+        avatarUrl = await uploadAvatar(selectedAvatarFile);
+      }
 
       await updateUser({
-        name: trimmedName,
-        avatarUrl: previewUrl,
+        name: nextName,
+        ...(selectedAvatarFile ? { avatarUrl } : {}),
       });
 
-      setSuccess(true);
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : 'Failed to update profile.',
-      );
+      if (nameInputRef.current) {
+        nameInputRef.current.value = nextName;
+      }
+
+      setSelectedAvatarFile(null);
+      setAvatarPreview(avatarUrl ?? '');
+      setSuccess('Profile updated successfully.');
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Failed to update profile.');
     } finally {
       setSaving(false);
     }
   };
+
+  const initials = (user?.name ?? 'User')
+    .split(' ')
+    .map((part) => part.charAt(0))
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
 
   return (
     <main className="settings-page">
       <div className="settings-background">
         <div className="settings-glow settings-glow-one" />
         <div className="settings-glow settings-glow-two" />
-        <div className="settings-grid" />
       </div>
 
-      <header className="settings-header">
-        <div className="settings-brand">
-          <NexChatLogo size={42} showText />
-        </div>
+      <div className="settings-content">
+        <header className="settings-header">
+          <button type="button" className="settings-back-button" onClick={onBack}>
+            <ArrowLeft size={18} />
+            <span>Back</span>
+          </button>
 
-        <button
-          type="button"
-          className="settings-back-button"
-          onClick={onBack}
-        >
-          <ArrowLeft size={17} />
-          Back to chat
-        </button>
-      </header>
+          <div className="settings-brand">
+            <h1>Settings</h1>
+            <p>Manage your NexChat profile.</p>
+          </div>
+        </header>
 
-      <section className="settings-content">
-        <div className="settings-heading">
-          <span>ACCOUNT</span>
-
-          <h1>Settings</h1>
-
-          <p>
-            Manage your profile and account preferences.
-          </p>
-        </div>
-
-        <form
-          className="settings-card"
-          onSubmit={handleSave}
-        >
+        <section className="settings-card">
           <div className="settings-card-heading">
+            <div className="settings-icon">
+              <User size={20} />
+            </div>
+
             <div>
               <h2>Profile</h2>
-
-              <p>
-                Update your personal information.
-              </p>
+              <p>Update your personal information and profile picture.</p>
             </div>
           </div>
 
-          <div className="settings-profile">
+          <form className="settings-profile" onSubmit={handleSave}>
             <div className="settings-avatar-wrapper">
               <div className="settings-avatar">
-                {previewUrl ? (
-                  <img
-                    src={previewUrl}
-                    alt="Profile preview"
-                  />
-                ) : (
-                  getInitials(user?.name ?? 'User')
-                )}
+                {avatarPreview ? <img src={avatarPreview} alt="Profile" /> : initials}
               </div>
 
               <button
                 type="button"
-                className="settings-avatar-button"
-                onClick={() =>
-                  fileInputRef.current?.click()
-                }
-                aria-label="Change profile photo"
-                title="Change profile photo"
+                className="settings-change-photo"
+                onClick={() => fileInputRef.current?.click()}
               >
                 <Camera size={16} />
+                Change photo
               </button>
 
               <input
                 ref={fileInputRef}
                 type="file"
                 accept="image/png,image/jpeg,image/webp"
-                onChange={handlePhotoChange}
                 hidden
+                onChange={handlePhotoChange}
               />
             </div>
 
-            <div className="settings-profile-info">
-              <strong>
-                {user?.name ?? 'User'}
-              </strong>
+            <div className="settings-fields">
+              <div className="settings-field">
+                <label htmlFor="settings-name">Full name</label>
 
-              <span>{user?.email ?? ''}</span>
+                <div className="settings-input-wrapper">
+                  <User size={18} />
 
-              <button
-                type="button"
-                className="settings-change-photo"
-                onClick={() =>
-                  fileInputRef.current?.click()
-                }
-              >
-                Change profile photo
+                  <input
+                    ref={nameInputRef}
+                    key={user?.id ?? 'settings-name'}
+                    id="settings-name"
+                    type="text"
+                    defaultValue={user?.name ?? ''}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="settings-field">
+                <label htmlFor="settings-email">Email</label>
+
+                <div className="settings-input-wrapper">
+                  <Mail size={18} />
+
+                  <input id="settings-email" type="email" value={user?.email ?? ''} disabled />
+                </div>
+
+                <small>Email cannot be changed here.</small>
+              </div>
+            </div>
+
+            {error && <div className="settings-error">{error}</div>}
+
+            {success && (
+              <div className="settings-success">
+                <Check size={16} />
+                {success}
+              </div>
+            )}
+
+            <div className="settings-actions">
+              <button type="submit" className="settings-save-button" disabled={saving}>
+                <Save size={17} />
+
+                {saving ? 'Saving...' : 'Save changes'}
               </button>
             </div>
-          </div>
-
-          <div className="settings-fields">
-            <label>
-              <span>Name</span>
-
-              <input
-                type="text"
-                value={name}
-                onChange={(event) =>
-                  setName(event.target.value)
-                }
-                placeholder="Your name"
-                required
-              />
-            </label>
-
-            <label>
-              <span>Email</span>
-
-              <input
-                type="email"
-                value={user?.email ?? ''}
-                disabled
-              />
-            </label>
-          </div>
-
-          {error && (
-            <p className="settings-error">
-              {error}
-            </p>
-          )}
-
-          {success && (
-            <p className="settings-success">
-              Profile updated successfully.
-            </p>
-          )}
-
-          <div className="settings-actions">
-            <button
-              type="submit"
-              className="settings-save-button"
-              disabled={saving}
-            >
-              <Save size={16} />
-
-              {saving
-                ? 'Saving...'
-                : 'Save changes'}
-            </button>
-          </div>
-        </form>
-      </section>
+          </form>
+        </section>
+      </div>
     </main>
   );
 }

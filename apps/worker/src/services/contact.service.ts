@@ -3,21 +3,45 @@ import { ObjectId, type Db } from 'mongodb';
 import {
   createContactRequest,
   deleteContact,
+  findAcceptedContactById,
   findAcceptedContacts,
   findContactBetweenUsers,
   findPendingIncomingRequests,
+  findPendingOutgoingRequests,
+  reuseRejectedContactRequest,
   updateContactStatus,
+  type Contact,
 } from '../repositories/contact.repository';
 
-import {
-  findUserById,
-} from '../repositories/user.repository';
+import { findUserById } from '../repositories/user.repository';
+
+import { createDirectConversation } from './conversation.service';
+
+export interface ContactRequest {
+  id: string;
+  senderId: string;
+  receiverId: string;
+  status: 'pending' | 'accepted' | 'rejected';
+  createdAt: string;
+  updatedAt: string;
+}
+
+function toContactRequest(contact: Contact): ContactRequest {
+  return {
+    id: contact._id!.toString(),
+    senderId: contact.requesterId.toString(),
+    receiverId: contact.recipientId.toString(),
+    status: contact.status,
+    createdAt: contact.createdAt.toISOString(),
+    updatedAt: contact.updatedAt.toISOString(),
+  };
+}
 
 export async function requestContact(
   db: Db,
   requesterId: string,
   recipientId: string,
-) {
+): Promise<ContactRequest> {
   if (!ObjectId.isValid(requesterId)) {
     throw new Error('Invalid requester id');
   }
@@ -30,19 +54,13 @@ export async function requestContact(
     throw new Error('Cannot add yourself as a contact');
   }
 
-  const requester = await findUserById(
-    db,
-    requesterId,
-  );
+  const requester = await findUserById(db, requesterId);
 
   if (!requester) {
     throw new Error('Requester not found');
   }
 
-  const recipient = await findUserById(
-    db,
-    recipientId,
-  );
+  const recipient = await findUserById(db, recipientId);
 
   if (!recipient) {
     throw new Error('Recipient not found');
@@ -64,22 +82,38 @@ export async function requestContact(
     }
 
     if (existing.status === 'rejected') {
-      throw new Error('Contact request was rejected');
+      const reused = await reuseRejectedContactRequest(
+        db,
+        existing._id!,
+        new ObjectId(requesterId),
+        new ObjectId(recipientId),
+      );
+
+      if (!reused) {
+        throw new Error('Failed to reuse rejected contact request');
+      }
+
+      return toContactRequest(reused);
     }
   }
 
-  return createContactRequest(
+  const contact = await createContactRequest(
     db,
     new ObjectId(requesterId),
     new ObjectId(recipientId),
   );
+
+  return toContactRequest(contact);
 }
 
 export async function acceptContactRequest(
   db: Db,
   currentUserId: string,
   contactId: string,
-) {
+): Promise<{
+  request: ContactRequest;
+  conversation: Awaited<ReturnType<typeof createDirectConversation>>;
+}> {
   if (!ObjectId.isValid(currentUserId)) {
     throw new Error('Invalid user id');
   }
@@ -88,32 +122,37 @@ export async function acceptContactRequest(
     throw new Error('Invalid contact id');
   }
 
-  const contacts = await findPendingIncomingRequests(
-    db,
-    new ObjectId(currentUserId),
-  );
+  const contacts = await findPendingIncomingRequests(db, new ObjectId(currentUserId));
 
-  const request = contacts.find(
-    (item) =>
-      item._id?.toString() === contactId,
-  );
+  const request = contacts.find((item) => item._id?.toString() === contactId);
 
   if (!request) {
     throw new Error('Contact request not found');
   }
 
-  return updateContactStatus(
+  const updated = await updateContactStatus(db, new ObjectId(contactId), 'accepted');
+
+  if (!updated) {
+    throw new Error('Contact request not found');
+  }
+
+  const conversation = await createDirectConversation(
     db,
-    new ObjectId(contactId),
-    'accepted',
+    currentUserId,
+    request.requesterId.toString(),
   );
+
+  return {
+    request: toContactRequest(updated),
+    conversation,
+  };
 }
 
 export async function rejectContactRequest(
   db: Db,
   currentUserId: string,
   contactId: string,
-) {
+): Promise<ContactRequest> {
   if (!ObjectId.isValid(currentUserId)) {
     throw new Error('Invalid user id');
   }
@@ -122,60 +161,90 @@ export async function rejectContactRequest(
     throw new Error('Invalid contact id');
   }
 
-  const contacts = await findPendingIncomingRequests(
-    db,
-    new ObjectId(currentUserId),
-  );
+  const contacts = await findPendingIncomingRequests(db, new ObjectId(currentUserId));
 
-  const request = contacts.find(
-    (item) =>
-      item._id?.toString() === contactId,
-  );
+  const request = contacts.find((item) => item._id?.toString() === contactId);
 
   if (!request) {
     throw new Error('Contact request not found');
   }
 
-  return updateContactStatus(
-    db,
-    new ObjectId(contactId),
-    'rejected',
-  );
+  const updated = await updateContactStatus(db, new ObjectId(contactId), 'rejected');
+
+  if (!updated) {
+    throw new Error('Contact request not found');
+  }
+
+  return toContactRequest(updated);
 }
 
-export async function getContacts(
-  db: Db,
-  userId: string,
-) {
+export async function getContacts(db: Db, userId: string): Promise<ContactRequest[]> {
   if (!ObjectId.isValid(userId)) {
     throw new Error('Invalid user id');
   }
 
-  return findAcceptedContacts(
-    db,
-    new ObjectId(userId),
-  );
+  const contacts = await findAcceptedContacts(db, new ObjectId(userId));
+
+  return contacts.map(toContactRequest);
 }
 
-export async function getIncomingRequests(
-  db: Db,
-  userId: string,
-) {
+export async function getIncomingRequests(db: Db, userId: string): Promise<ContactRequest[]> {
   if (!ObjectId.isValid(userId)) {
     throw new Error('Invalid user id');
   }
 
-  return findPendingIncomingRequests(
-    db,
-    new ObjectId(userId),
-  );
+  const requests = await findPendingIncomingRequests(db, new ObjectId(userId));
+
+  return requests.map(toContactRequest);
 }
 
-export async function removeContact(
+export async function getOutgoingRequests(db: Db, userId: string): Promise<ContactRequest[]> {
+  if (!ObjectId.isValid(userId)) {
+    throw new Error('Invalid user id');
+  }
+
+  const requests = await findPendingOutgoingRequests(db, new ObjectId(userId));
+
+  return requests.map(toContactRequest);
+}
+
+export async function getContactRequestStatus(
   db: Db,
-  userId: string,
-  contactId: string,
-) {
+  currentUserId: string,
+  otherUserId: string,
+): Promise<{
+  status: 'none' | 'pending' | 'accepted' | 'rejected';
+  direction: 'incoming' | 'outgoing' | null;
+  requestId: string | null;
+}> {
+  if (!ObjectId.isValid(currentUserId) || !ObjectId.isValid(otherUserId)) {
+    throw new Error('Invalid user id');
+  }
+
+  const contact = await findContactBetweenUsers(
+    db,
+    new ObjectId(currentUserId),
+    new ObjectId(otherUserId),
+  );
+
+  if (!contact) {
+    return {
+      status: 'none',
+      direction: null,
+      requestId: null,
+    };
+  }
+
+  const direction = contact.requesterId.toString() === currentUserId ? 'outgoing' : 'incoming';
+
+  return {
+    status: contact.status,
+    direction,
+    requestId: contact._id?.toString() ?? null,
+  };
+}
+
+export async function removeContact(db: Db, userId: string, contactId: string) {
   if (!ObjectId.isValid(userId)) {
     throw new Error('Invalid user id');
   }
@@ -184,45 +253,27 @@ export async function removeContact(
     throw new Error('Invalid contact id');
   }
 
-  const contact = await findContactBetweenUsers(
-    db,
-    new ObjectId(userId),
-    new ObjectId(contactId),
-  );
+  const contact = await findAcceptedContactById(db, new ObjectId(contactId), new ObjectId(userId));
 
-  if (!contact || contact.status !== 'accepted') {
+  if (!contact) {
     throw new Error('Contact not found');
   }
 
-  const removed = await deleteContact(
-    db,
-    contact._id!,
-  );
+  const removed = await deleteContact(db, contact._id!);
 
   if (!removed) {
     throw new Error('Contact could not be removed');
   }
 
-  return true;
+  return toContactRequest(contact);
 }
 
-export async function areUsersContacts(
-  db: Db,
-  userAId: string,
-  userBId: string,
-): Promise<boolean> {
-  if (
-    !ObjectId.isValid(userAId) ||
-    !ObjectId.isValid(userBId)
-  ) {
+export async function areUsersContacts(db: Db, userAId: string, userBId: string): Promise<boolean> {
+  if (!ObjectId.isValid(userAId) || !ObjectId.isValid(userBId)) {
     return false;
   }
 
-  const contact = await findContactBetweenUsers(
-    db,
-    new ObjectId(userAId),
-    new ObjectId(userBId),
-  );
+  const contact = await findContactBetweenUsers(db, new ObjectId(userAId), new ObjectId(userBId));
 
   return contact?.status === 'accepted';
 }

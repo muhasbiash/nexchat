@@ -25,9 +25,7 @@ socket.on('connect', () => {
 
   socket.emit('join_conversation', conversationId);
 
-  console.log(
-    `[${label}] join_conversation sent: ${conversationId}`,
-  );
+  console.log(`[${label}] join_conversation sent: ${conversationId}`);
 
   setTimeout(() => {
     socket.emit(

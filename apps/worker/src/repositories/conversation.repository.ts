@@ -17,14 +17,21 @@ function getConversationsCollection(db: Db) {
   return db.collection<Conversation>('conversations');
 }
 
+export async function findConversationById(
+  db: Db,
+  conversationId: ObjectId,
+): Promise<Conversation | null> {
+  return getConversationsCollection(db).findOne({
+    _id: conversationId,
+  });
+}
+
 export async function findConversationByParticipants(
   db: Db,
   participants: ObjectId[],
 ): Promise<Conversation | null> {
   if (participants.length !== 2) {
-    throw new Error(
-      'Direct conversation requires exactly 2 participants',
-    );
+    throw new Error('Direct conversation requires exactly 2 participants');
   }
 
   return getConversationsCollection(db).findOne({
@@ -49,9 +56,7 @@ export async function createConversation(
     updatedAt: now,
   };
 
-  const result = await getConversationsCollection(db).insertOne(
-    conversation,
-  );
+  const result = await getConversationsCollection(db).insertOne(conversation);
 
   return {
     ...conversation,
@@ -59,10 +64,7 @@ export async function createConversation(
   };
 }
 
-export async function findConversationsByUserId(
-  db: Db,
-  userId: ObjectId,
-): Promise<Conversation[]> {
+export async function findConversationsByUserId(db: Db, userId: ObjectId): Promise<Conversation[]> {
   return getConversationsCollection(db)
     .find({
       participants: userId,

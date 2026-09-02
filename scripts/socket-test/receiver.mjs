@@ -25,9 +25,7 @@ socket.on('connect', () => {
 
   socket.emit('join_conversation', conversationId);
 
-  console.log(
-    `[${label}] joined conversation: ${conversationId}`,
-  );
+  console.log(`[${label}] joined conversation: ${conversationId}`);
 
   console.log(`[${label}] waiting for incoming messages...`);
 });

@@ -4,6 +4,7 @@ export interface AuthUser {
   id: string;
   name: string;
   email: string;
+  avatarUrl?: string | null;
 }
 
 export interface AuthContextValue {
@@ -11,6 +12,7 @@ export interface AuthContextValue {
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
+  updateUser: (input: { name?: string; avatarUrl?: string | null }) => Promise<void>;
   logout: () => void;
 }
 

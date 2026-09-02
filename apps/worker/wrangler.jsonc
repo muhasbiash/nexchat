@@ -7,24 +7,22 @@
   "workers_dev": true,
 
   "vars": {
-    "ENVIRONMENT": "production"
+    "ENVIRONMENT": "production",
   },
 
   "durable_objects": {
     "bindings": [
       {
         "name": "NEXCHAT_ROOM",
-        "class_name": "NexChatRoom"
-      }
-    ]
+        "class_name": "NexChatRoom",
+      },
+    ],
   },
 
   "migrations": [
     {
       "tag": "v1",
-      "new_sqlite_classes": [
-        "NexChatRoom"
-      ]
-    }
-  ]
+      "new_sqlite_classes": ["NexChatRoom"],
+    },
+  ],
 }

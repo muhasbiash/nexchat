@@ -12,9 +12,7 @@ import {
 
 import { findUserById } from '../repositories/user.repository.js';
 
-import {
-  getOrCreateDirectConversation,
-} from './conversation.service.js';
+import { getOrCreateDirectConversation } from './conversation.service.js';
 
 const validateObjectId = (id: string): ObjectId => {
   if (!ObjectId.isValid(id)) {
@@ -41,10 +39,7 @@ export const getContactRequestStatus = async (
     throw new Error('Cannot check contact status with yourself');
   }
 
-  const request = await findLatestRequestBetweenUsers(
-    userObjectId,
-    otherUserObjectId,
-  );
+  const request = await findLatestRequestBetweenUsers(userObjectId, otherUserObjectId);
 
   if (!request) {
     return {
@@ -56,17 +51,12 @@ export const getContactRequestStatus = async (
 
   return {
     status: request.status,
-    direction: request.senderId.equals(userObjectId)
-      ? 'outgoing'
-      : 'incoming',
+    direction: request.senderId.equals(userObjectId) ? 'outgoing' : 'incoming',
     requestId: request._id?.toHexString() ?? null,
   };
 };
 
-export const sendContactRequest = async (
-  requesterId: string,
-  recipientId: string,
-) => {
+export const sendContactRequest = async (requesterId: string, recipientId: string) => {
   const requesterObjectId = validateObjectId(requesterId);
   const recipientObjectId = validateObjectId(recipientId);
 
@@ -80,10 +70,7 @@ export const sendContactRequest = async (
     throw new Error('User not found');
   }
 
-  const existing = await findLatestRequestBetweenUsers(
-    requesterObjectId,
-    recipientObjectId,
-  );
+  const existing = await findLatestRequestBetweenUsers(requesterObjectId, recipientObjectId);
 
   if (existing) {
     if (existing.status === 'pending') {
@@ -95,32 +82,22 @@ export const sendContactRequest = async (
     }
   }
 
-  return createContactRequest(
-    requesterObjectId,
-    recipientObjectId,
-  );
+  return createContactRequest(requesterObjectId, recipientObjectId);
 };
 
-export const getIncomingContactRequests = async (
-  userId: string,
-) => {
+export const getIncomingContactRequests = async (userId: string) => {
   const userObjectId = validateObjectId(userId);
 
   return findIncomingRequests(userObjectId);
 };
 
-export const getOutgoingContactRequests = async (
-  userId: string,
-) => {
+export const getOutgoingContactRequests = async (userId: string) => {
   const userObjectId = validateObjectId(userId);
 
   return findOutgoingRequests(userObjectId);
 };
 
-export const acceptContactRequest = async (
-  requestId: string,
-  recipientId: string,
-) => {
+export const acceptContactRequest = async (requestId: string, recipientId: string) => {
   if (!ObjectId.isValid(requestId)) {
     throw new Error('Invalid contact request ID');
   }
@@ -142,10 +119,7 @@ export const acceptContactRequest = async (
     throw new Error('Contact request is no longer pending');
   }
 
-  const updatedRequest = await updateContactRequestStatus(
-    requestObjectId,
-    'accepted',
-  );
+  const updatedRequest = await updateContactRequestStatus(requestObjectId, 'accepted');
 
   if (!updatedRequest) {
     throw new Error('Contact request is no longer pending');
@@ -166,10 +140,7 @@ export const acceptContactRequest = async (
   };
 };
 
-export const rejectContactRequest = async (
-  requestId: string,
-  recipientId: string,
-) => {
+export const rejectContactRequest = async (requestId: string, recipientId: string) => {
   if (!ObjectId.isValid(requestId)) {
     throw new Error('Invalid contact request ID');
   }
@@ -191,10 +162,7 @@ export const rejectContactRequest = async (
     throw new Error('Contact request is no longer pending');
   }
 
-  const updated = await updateContactRequestStatus(
-    requestObjectId,
-    'rejected',
-  );
+  const updated = await updateContactRequestStatus(requestObjectId, 'rejected');
 
   if (!updated) {
     throw new Error('Contact request is no longer pending');

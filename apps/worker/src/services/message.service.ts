@@ -1,13 +1,13 @@
 import { ObjectId, type Db } from 'mongodb';
 
-import {
-  createMessage,
-  findMessagesByConversationId,
-} from '../repositories/message.repository';
+import { createMessage, findMessagesByConversationId } from '../repositories/message.repository';
 
 import {
+  findConversationById,
   isUserInConversation,
 } from '../repositories/conversation.repository';
+
+import { areUsersContacts } from './contact.service';
 
 export interface MessageResponse {
   id: string;
@@ -17,15 +17,13 @@ export interface MessageResponse {
   createdAt: Date;
 }
 
-function serializeMessage(
-  message: {
-    _id?: ObjectId;
-    conversationId: ObjectId;
-    senderId: ObjectId;
-    content: string;
-    createdAt: Date;
-  },
-): MessageResponse {
+function serializeMessage(message: {
+  _id?: ObjectId;
+  conversationId: ObjectId;
+  senderId: ObjectId;
+  content: string;
+  createdAt: Date;
+}): MessageResponse {
   return {
     id: message._id!.toString(),
     conversationId: message.conversationId.toString(),
@@ -55,32 +53,41 @@ export async function createConversationMessage(
     throw new Error('Message content is required');
   }
 
-  const conversationObjectId =
-    new ObjectId(conversationId);
+  const conversationObjectId = new ObjectId(conversationId);
 
-  const senderObjectId =
-    new ObjectId(senderId);
+  const senderObjectId = new ObjectId(senderId);
 
-  const allowed = await isUserInConversation(
-    db,
-    conversationObjectId,
-    senderObjectId,
-  );
+  const allowed = await isUserInConversation(db, conversationObjectId, senderObjectId);
 
   if (!allowed) {
-    throw new Error(
-      'User is not a member of this conversation',
-    );
+    throw new Error('User is not a member of this conversation');
   }
 
-  const message = await createMessage(
-    db,
-    {
-      conversationId: conversationObjectId,
-      senderId: senderObjectId,
-      content: normalizedContent,
-    },
-  );
+  const conversation = await findConversationById(db, conversationObjectId);
+
+  if (!conversation) {
+    throw new Error('Conversation not found');
+  }
+
+  const participantIds = conversation.participants.map((participant) => participant.toString());
+
+  const otherParticipantId = participantIds.find((participantId) => participantId !== senderId);
+
+  if (!otherParticipantId) {
+    throw new Error('Conversation participant not found');
+  }
+
+  const areContacts = await areUsersContacts(db, senderId, otherParticipantId);
+
+  if (!areContacts) {
+    throw new Error('Users must be accepted contacts before sending messages');
+  }
+
+  const message = await createMessage(db, {
+    conversationId: conversationObjectId,
+    senderId: senderObjectId,
+    content: normalizedContent,
+  });
 
   return serializeMessage(message);
 }
@@ -98,29 +105,17 @@ export async function getConversationMessages(
     throw new Error('Invalid user id');
   }
 
-  const conversationObjectId =
-    new ObjectId(conversationId);
+  const conversationObjectId = new ObjectId(conversationId);
 
-  const userObjectId =
-    new ObjectId(userId);
+  const userObjectId = new ObjectId(userId);
 
-  const allowed = await isUserInConversation(
-    db,
-    conversationObjectId,
-    userObjectId,
-  );
+  const allowed = await isUserInConversation(db, conversationObjectId, userObjectId);
 
   if (!allowed) {
-    throw new Error(
-      'User is not a member of this conversation',
-    );
+    throw new Error('User is not a member of this conversation');
   }
 
-  const messages =
-    await findMessagesByConversationId(
-      db,
-      conversationObjectId,
-    );
+  const messages = await findMessagesByConversationId(db, conversationObjectId);
 
   return messages.map(serializeMessage);
 }

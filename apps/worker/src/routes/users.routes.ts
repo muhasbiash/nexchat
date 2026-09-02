@@ -11,6 +11,7 @@ interface PublicUser {
   id: string;
   name: string;
   email: string;
+  avatarUrl?: string | null;
 }
 
 function json(data: unknown, status = 200): Response {
@@ -31,10 +32,7 @@ function getBearerToken(request: Request): string | null {
 
   const [scheme, token] = authorization.split(' ');
 
-  if (
-    scheme?.toLowerCase() !== 'bearer' ||
-    !token
-  ) {
+  if (scheme?.toLowerCase() !== 'bearer' || !token) {
     return null;
   }
 
@@ -47,10 +45,7 @@ export async function handleUsersRoute(
   db: Db,
   env: UserEnv,
 ): Promise<Response | null> {
-  if (
-    request.method === 'GET' &&
-    pathname === '/api/users'
-  ) {
+  if (request.method === 'GET' && pathname === '/api/users') {
     try {
       const token = getBearerToken(request);
 
@@ -63,10 +58,7 @@ export async function handleUsersRoute(
         );
       }
 
-      await verifyToken(
-        token,
-        env.JWT_SECRET,
-      );
+      await verifyToken(token, env.JWT_SECRET);
 
       const users = await findAllUsers(db);
 
@@ -74,16 +66,14 @@ export async function handleUsersRoute(
         id: user._id!.toString(),
         name: user.name,
         email: user.email,
+        avatarUrl: user.avatarUrl ?? null,
       }));
 
       return json({
         users: publicUsers,
       });
     } catch (error) {
-      console.error(
-        '[Users] Get users error:',
-        error,
-      );
+      console.error('[Users] Get users error:', error);
 
       return json(
         {

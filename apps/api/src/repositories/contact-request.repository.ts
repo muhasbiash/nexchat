@@ -2,10 +2,7 @@ import { ObjectId, type Collection } from 'mongodb';
 
 import { getMongoDb } from '../lib/mongodb.js';
 
-export type ContactRequestStatus =
-  | 'pending'
-  | 'accepted'
-  | 'rejected';
+export type ContactRequestStatus = 'pending' | 'accepted' | 'rejected';
 
 export interface ContactRequest {
   _id?: ObjectId;
@@ -39,17 +36,13 @@ export const findPendingRequestBetweenUsers = async (
   });
 };
 
-export const findRequestById = async (
-  requestId: ObjectId,
-): Promise<ContactRequest | null> => {
+export const findRequestById = async (requestId: ObjectId): Promise<ContactRequest | null> => {
   return getContactRequestsCollection().findOne({
     _id: requestId,
   });
 };
 
-export const findIncomingRequests = async (
-  receiverId: ObjectId,
-): Promise<ContactRequest[]> => {
+export const findIncomingRequests = async (receiverId: ObjectId): Promise<ContactRequest[]> => {
   return getContactRequestsCollection()
     .find({
       receiverId,
@@ -59,9 +52,7 @@ export const findIncomingRequests = async (
     .toArray();
 };
 
-export const findOutgoingRequests = async (
-  senderId: ObjectId,
-): Promise<ContactRequest[]> => {
+export const findOutgoingRequests = async (senderId: ObjectId): Promise<ContactRequest[]> => {
   return getContactRequestsCollection()
     .find({
       senderId,

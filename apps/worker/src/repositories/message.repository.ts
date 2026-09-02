@@ -18,10 +18,7 @@ function getMessagesCollection(db: Db) {
   return db.collection<Message>('messages');
 }
 
-export async function createMessage(
-  db: Db,
-  input: CreateMessageInput,
-): Promise<Message> {
+export async function createMessage(db: Db, input: CreateMessageInput): Promise<Message> {
   const message: Message = {
     conversationId: input.conversationId,
     senderId: input.senderId,
@@ -29,9 +26,7 @@ export async function createMessage(
     createdAt: new Date(),
   };
 
-  const result = await getMessagesCollection(db).insertOne(
-    message,
-  );
+  const result = await getMessagesCollection(db).insertOne(message);
 
   return {
     ...message,

@@ -6,9 +6,7 @@ import {
   findConversationsByUserId,
 } from '../repositories/conversation.repository';
 
-import {
-  findUserById,
-} from '../repositories/user.repository';
+import { findUserById } from '../repositories/user.repository';
 
 export interface ConversationUser {
   id: string;
@@ -37,10 +35,7 @@ async function buildConversation(
   const participants: ConversationUser[] = [];
 
   for (const participantId of conversation.participants) {
-    const user = await findUserById(
-      db,
-      participantId.toString(),
-    );
+    const user = await findUserById(db, participantId.toString());
 
     if (!user || !user._id) {
       throw new Error('Conversation user not found');
@@ -62,28 +57,14 @@ async function buildConversation(
   };
 }
 
-export async function getUserConversations(
-  db: Db,
-  userId: string,
-): Promise<Conversation[]> {
+export async function getUserConversations(db: Db, userId: string): Promise<Conversation[]> {
   if (!ObjectId.isValid(userId)) {
     throw new Error('Invalid current user id');
   }
 
-  const conversations =
-    await findConversationsByUserId(
-      db,
-      new ObjectId(userId),
-    );
+  const conversations = await findConversationsByUserId(db, new ObjectId(userId));
 
-  return Promise.all(
-    conversations.map((conversation) =>
-      buildConversation(
-        db,
-        conversation,
-      ),
-    ),
-  );
+  return Promise.all(conversations.map((conversation) => buildConversation(db, conversation)));
 }
 
 export async function createDirectConversation(
@@ -100,69 +81,38 @@ export async function createDirectConversation(
   }
 
   if (currentUserId === participantId) {
-    throw new Error(
-      'Cannot create conversation with yourself',
-    );
+    throw new Error('Cannot create conversation with yourself');
   }
 
-  const currentUserObjectId =
-    new ObjectId(currentUserId);
+  const currentUserObjectId = new ObjectId(currentUserId);
 
-  const participantObjectId =
-    new ObjectId(participantId);
+  const participantObjectId = new ObjectId(participantId);
 
-  const currentUser = await findUserById(
-    db,
-    currentUserId,
-  );
+  const currentUser = await findUserById(db, currentUserId);
 
   if (!currentUser) {
-    throw new Error(
-      'Conversation user not found',
-    );
+    throw new Error('Conversation user not found');
   }
 
-  const participant = await findUserById(
-    db,
-    participantId,
-  );
+  const participant = await findUserById(db, participantId);
 
   if (!participant) {
-    throw new Error(
-      'Participant not found',
-    );
+    throw new Error('Participant not found');
   }
 
-  const existing =
-    await findConversationByParticipants(
-      db,
-      [
-        currentUserObjectId,
-        participantObjectId,
-      ],
-    );
+  const existing = await findConversationByParticipants(db, [
+    currentUserObjectId,
+    participantObjectId,
+  ]);
 
   if (existing) {
-    return buildConversation(
-      db,
-      existing,
-    );
+    return buildConversation(db, existing);
   }
 
-  const conversation =
-    await createConversation(
-      db,
-      {
-        type: 'direct',
-        participants: [
-          currentUserObjectId,
-          participantObjectId,
-        ],
-      },
-    );
+  const conversation = await createConversation(db, {
+    type: 'direct',
+    participants: [currentUserObjectId, participantObjectId],
+  });
 
-  return buildConversation(
-    db,
-    conversation,
-  );
+  return buildConversation(db, conversation);
 }

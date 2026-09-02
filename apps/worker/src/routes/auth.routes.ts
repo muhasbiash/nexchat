@@ -1,20 +1,23 @@
 import type { Db } from 'mongodb';
 
+import { createAvatarUploadSignature } from '../lib/cloudinary';
+
 import {
   getCurrentUser,
   loginUser,
   registerUser,
+  updateCurrentUser,
   verifyToken,
 } from '../services/auth.service';
 
 interface AuthEnv {
   JWT_SECRET: string;
+  CLOUDINARY_CLOUD_NAME: string;
+  CLOUDINARY_API_KEY: string;
+  CLOUDINARY_API_SECRET: string;
 }
 
-function json(
-  data: unknown,
-  status = 200,
-): Response {
+function json(data: unknown, status = 200): Response {
   return Response.json(data, {
     status,
     headers: {
@@ -24,9 +27,7 @@ function json(
 }
 
 function getBearerToken(request: Request): string | null {
-  const authorization = request.headers.get(
-    'Authorization',
-  );
+  const authorization = request.headers.get('Authorization');
 
   if (!authorization) {
     return null;
@@ -34,10 +35,7 @@ function getBearerToken(request: Request): string | null {
 
   const [scheme, token] = authorization.split(' ');
 
-  if (
-    scheme?.toLowerCase() !== 'bearer' ||
-    !token
-  ) {
+  if (scheme?.toLowerCase() !== 'bearer' || !token) {
     return null;
   }
 
@@ -50,12 +48,9 @@ export async function handleAuthRoute(
   db: Db,
   env: AuthEnv,
 ): Promise<Response | null> {
-  if (
-    request.method === 'POST' &&
-    pathname === '/api/auth/register'
-  ) {
+  if (request.method === 'POST' && pathname === '/api/auth/register') {
     try {
-      const body = await request.json() as {
+      const body = (await request.json()) as {
         name?: string;
         email?: string;
         password?: string;
@@ -66,19 +61,13 @@ export async function handleAuthRoute(
       if (!name || !email || !password) {
         return json(
           {
-            message:
-              'Name, email, and password are required',
+            message: 'Name, email, and password are required',
           },
           400,
         );
       }
 
-      const user = await registerUser(
-        db,
-        name,
-        email,
-        password,
-      );
+      const user = await registerUser(db, name, email, password);
 
       return json(
         {
@@ -87,10 +76,7 @@ export async function handleAuthRoute(
         201,
       );
     } catch (error) {
-      if (
-        error instanceof Error &&
-        error.message === 'Email already registered'
-      ) {
+      if (error instanceof Error && error.message === 'Email already registered') {
         return json(
           {
             message: error.message,
@@ -99,10 +85,7 @@ export async function handleAuthRoute(
         );
       }
 
-      console.error(
-        '[Auth] Register error:',
-        error,
-      );
+      console.error('[Auth] Register error:', error);
 
       return json(
         {
@@ -113,12 +96,9 @@ export async function handleAuthRoute(
     }
   }
 
-  if (
-    request.method === 'POST' &&
-    pathname === '/api/auth/login'
-  ) {
+  if (request.method === 'POST' && pathname === '/api/auth/login') {
     try {
-      const body = await request.json() as {
+      const body = (await request.json()) as {
         email?: string;
         password?: string;
       };
@@ -128,26 +108,17 @@ export async function handleAuthRoute(
       if (!email || !password) {
         return json(
           {
-            message:
-              'Email and password are required',
+            message: 'Email and password are required',
           },
           400,
         );
       }
 
-      const result = await loginUser(
-        db,
-        email,
-        password,
-        env.JWT_SECRET,
-      );
+      const result = await loginUser(db, email, password, env.JWT_SECRET);
 
       return json(result);
     } catch (error) {
-      if (
-        error instanceof Error &&
-        error.message === 'Invalid email or password'
-      ) {
+      if (error instanceof Error && error.message === 'Invalid email or password') {
         return json(
           {
             message: error.message,
@@ -156,10 +127,7 @@ export async function handleAuthRoute(
         );
       }
 
-      console.error(
-        '[Auth] Login error:',
-        error,
-      );
+      console.error('[Auth] Login error:', error);
 
       return json(
         {
@@ -170,10 +138,7 @@ export async function handleAuthRoute(
     }
   }
 
-  if (
-    request.method === 'GET' &&
-    pathname === '/api/auth/me'
-  ) {
+  if (request.method === 'POST' && pathname === '/api/auth/avatar/signature') {
     try {
       const token = getBearerToken(request);
 
@@ -186,29 +151,51 @@ export async function handleAuthRoute(
         );
       }
 
-console.log('[AuthRoute] before verifyToken');
+      const payload = await verifyToken(token, env.JWT_SECRET);
 
-const payload = await verifyToken(
-        token,
-        env.JWT_SECRET,
-      );
+      const signature = await createAvatarUploadSignature(payload.sub, {
+        CLOUDINARY_CLOUD_NAME: env.CLOUDINARY_CLOUD_NAME,
+        CLOUDINARY_API_KEY: env.CLOUDINARY_API_KEY,
+        CLOUDINARY_API_SECRET: env.CLOUDINARY_API_SECRET,
+      });
 
-      console.log(
-        '[AuthRoute] after verifyToken:',
-        payload.sub,
+      return json(signature);
+    } catch (error) {
+      console.error('[Auth] Avatar signature error:', error);
+
+      return json(
+        {
+          message: 'Authentication required',
+        },
+        401,
       );
+    }
+  }
+
+  if (request.method === 'GET' && pathname === '/api/auth/me') {
+    try {
+      const token = getBearerToken(request);
+
+      if (!token) {
+        return json(
+          {
+            message: 'Authentication required',
+          },
+          401,
+        );
+      }
+
+      console.log('[AuthRoute] before verifyToken');
+
+      const payload = await verifyToken(token, env.JWT_SECRET);
+
+      console.log('[AuthRoute] after verifyToken:', payload.sub);
 
       console.log('[AuthRoute] before getCurrentUser');
 
-      const user = await getCurrentUser(
-        db,
-        payload.sub,
-      );
+      const user = await getCurrentUser(db, payload.sub);
 
-      console.log(
-        '[AuthRoute] after getCurrentUser:',
-        Boolean(user),
-      );
+      console.log('[AuthRoute] after getCurrentUser:', Boolean(user));
 
       if (!user) {
         return json(
@@ -223,10 +210,100 @@ const payload = await verifyToken(
         user,
       });
     } catch (error) {
-      console.error(
-        '[Auth] Current user error:',
-        error,
+      console.error('[Auth] Current user error:', error);
+
+      return json(
+        {
+          message: 'Authentication required',
+        },
+        401,
       );
+    }
+  }
+
+  if (request.method === 'PATCH' && pathname === '/api/auth/me') {
+    try {
+      const token = getBearerToken(request);
+
+      if (!token) {
+        return json(
+          {
+            message: 'Authentication required',
+          },
+          401,
+        );
+      }
+
+      const payload = await verifyToken(token, env.JWT_SECRET);
+
+      const body = (await request.json()) as {
+        name?: unknown;
+        avatarUrl?: unknown;
+      };
+
+      const hasName = body.name !== undefined;
+      const hasAvatarUrl = body.avatarUrl !== undefined;
+
+      if (!hasName && !hasAvatarUrl) {
+        return json(
+          {
+            message: 'No profile changes provided',
+          },
+          400,
+        );
+      }
+
+      if (hasName && (typeof body.name !== 'string' || !body.name.trim())) {
+        return json(
+          {
+            message: 'Name is required',
+          },
+          400,
+        );
+      }
+
+      if (
+        hasAvatarUrl &&
+        body.avatarUrl !== null &&
+        (typeof body.avatarUrl !== 'string' ||
+          !body.avatarUrl.startsWith(`https://res.cloudinary.com/${env.CLOUDINARY_CLOUD_NAME}/`))
+      ) {
+        return json(
+          {
+            message: 'Invalid avatar URL',
+          },
+          400,
+        );
+      }
+
+      const user = await updateCurrentUser(db, payload.sub, {
+        ...(hasName ? { name: body.name as string } : {}),
+        ...(hasAvatarUrl ? { avatarUrl: body.avatarUrl as string | null } : {}),
+      });
+
+      if (!user) {
+        return json(
+          {
+            message: 'User not found',
+          },
+          404,
+        );
+      }
+
+      return json({
+        user,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Name is required') {
+        return json(
+          {
+            message: error.message,
+          },
+          400,
+        );
+      }
+
+      console.error('[Auth] Update current user error:', error);
 
       return json(
         {
