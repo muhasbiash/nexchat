@@ -809,7 +809,7 @@ export function ChatPage() {
       const removedOtherUserId =
         removedContact.senderId === user?.id ? removedContact.receiverId : removedContact.senderId;
 
-      const targetUserId = removedOtherUserId || otherUserId;
+      const targetUserId = removedOtherUserId;
 
       setContactStatuses((current) => ({
         ...current,
