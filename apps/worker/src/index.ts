@@ -44,6 +44,7 @@ interface SocketAttachment {
 const ALLOWED_ORIGINS = new Set([
   'http://localhost:5173',
   'https://nexchat-api.vercel.app',
+  'https://nexchat-sites.vercel.app',
   'https://nexchat-coyalb0jn-muhammad-hasbi-ashidiqi-s-projects.vercel.app',
 ]);
 
