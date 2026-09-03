@@ -1,16 +1,15 @@
 import { ArrowLeft, Mail, Pencil, User } from 'lucide-react';
 
-import { useAuth } from '../hooks/use-auth';
+import type { ApiUser } from '../types/user';
 
 interface ProfilePageProps {
+  user: ApiUser;
   onBack: () => void;
-  onEdit: () => void;
+  onEdit?: () => void;
 }
 
-export function ProfilePage({ onBack, onEdit }: ProfilePageProps) {
-  const { user } = useAuth();
-
-  const initials = (user?.name ?? 'User')
+export function ProfilePage({ user, onBack, onEdit }: ProfilePageProps) {
+  const initials = (user.name ?? 'User')
     .trim()
     .split(/\s+/)
     .slice(0, 2)
@@ -40,16 +39,12 @@ export function ProfilePage({ onBack, onEdit }: ProfilePageProps) {
         <section className="profile-card">
           <div className="profile-hero">
             <div className="profile-avatar">
-              {user?.avatarUrl ? (
-                <img src={user.avatarUrl} alt={`${user.name} avatar`} />
-              ) : (
-                initials
-              )}
+              {user.avatarUrl ? <img src={user.avatarUrl} alt={`${user.name} avatar`} /> : initials}
             </div>
 
             <div className="profile-identity">
-              <h2>{user?.name ?? 'User'}</h2>
-              <p>{user?.email ?? 'No email available'}</p>
+              <h2>{user.name}</h2>
+              <p>{user.email || 'No email available'}</p>
             </div>
           </div>
 
@@ -63,7 +58,7 @@ export function ProfilePage({ onBack, onEdit }: ProfilePageProps) {
 
               <div>
                 <span>Full name</span>
-                <strong>{user?.name ?? 'User'}</strong>
+                <strong>{user.name}</strong>
               </div>
             </div>
 
@@ -74,17 +69,19 @@ export function ProfilePage({ onBack, onEdit }: ProfilePageProps) {
 
               <div>
                 <span>Email address</span>
-                <strong>{user?.email ?? 'No email available'}</strong>
+                <strong>{user.email || 'No email available'}</strong>
               </div>
             </div>
           </div>
 
-          <div className="profile-actions">
-            <button type="button" className="profile-edit-button" onClick={onEdit}>
-              <Pencil size={17} />
-              Edit profile
-            </button>
-          </div>
+          {onEdit && (
+            <div className="profile-actions">
+              <button type="button" className="profile-edit-button" onClick={onEdit}>
+                <Pencil size={17} />
+                Edit profile
+              </button>
+            </div>
+          )}
         </section>
       </div>
     </main>

@@ -4219,3 +4219,28 @@ body,
     font-size: 0.68rem;
   }
 }
+
+/* Clickable user profile */
+.profile-user-link {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.profile-user-link:hover .conversation-user-info strong {
+  color: #2563eb;
+}
+
+.profile-user-link:focus-visible {
+  outline: 2px solid #60a5fa;
+  outline-offset: 3px;
+  border-radius: 10px;
+}

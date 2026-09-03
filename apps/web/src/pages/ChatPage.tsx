@@ -35,6 +35,7 @@ export function ChatPage() {
   const { user, logout } = useAuth();
   const [showSettings, setShowSettings] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [selectedProfileUser, setSelectedProfileUser] = useState<ApiUser | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
 
   const [users, setUsers] = useState<ApiUser[]>([]);
@@ -1130,14 +1131,23 @@ export function ChatPage() {
     return lastMessage.content;
   };
 
-  if (showProfile) {
+  if (showProfile && selectedProfileUser) {
     return (
       <ProfilePage
-        onBack={() => setShowProfile(false)}
-        onEdit={() => {
+        user={selectedProfileUser}
+        onBack={() => {
           setShowProfile(false);
-          setShowSettings(true);
+          setSelectedProfileUser(null);
         }}
+        onEdit={
+          selectedProfileUser.id === user?.id
+            ? () => {
+                setShowProfile(false);
+                setSelectedProfileUser(null);
+                setShowSettings(true);
+              }
+            : undefined
+        }
       />
     );
   }
@@ -1338,14 +1348,21 @@ export function ChatPage() {
 
                 return (
                   <div key={item.id} className="conversation-item contact-search-result">
-                    <div className="conversation-user-row">
+                    <button
+                      type="button"
+                      className="profile-user-link conversation-user-row"
+                      onClick={() => {
+                        setSelectedProfileUser(item);
+                        setShowProfile(true);
+                      }}
+                    >
                       {renderAvatar(item.name, item.avatarUrl)}
 
                       <div className="conversation-user-info">
                         <strong>{item.name}</strong>
                         <span>{item.email}</span>
                       </div>
-                    </div>
+                    </button>
 
                     <div className="contact-user-action">
                       {isAccepted && (
