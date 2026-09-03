@@ -694,10 +694,6 @@ input {
     white-space: nowrap;
   }
 
-  .conversation-item span {
-    display: none;
-  }
-
   .chat-window-header {
     padding: 0.8rem 1rem;
   }

@@ -52,6 +52,7 @@ export function ChatPage() {
   const [content, setContent] = useState('');
 
   const [socketConnected, setSocketConnected] = useState(false);
+  const [joinedConversationId, setJoinedConversationId] = useState<string | null>(null);
   const [typingUserId, setTypingUserId] = useState<string | null>(null);
 
   const [loadingUsers, setLoadingUsers] = useState(true);
@@ -439,6 +440,7 @@ export function ChatPage() {
       setSelectedUser(null);
       setMessages([]);
       setContent('');
+      setJoinedConversationId(null);
       setTypingUserId(null);
 
       if (typingTimeoutRef.current) {
@@ -585,10 +587,27 @@ export function ChatPage() {
             });
             break;
 
+          case 'joined_conversation':
+            if (selectedConversationRef.current?.id === event.conversationId) {
+              setJoinedConversationId(event.conversationId);
+              setError(null);
+
+              console.log('[WebSocket] Joined selected conversation:', event.conversationId);
+            }
+            break;
+
           case 'conversation_access_denied':
             console.error('[WebSocket] Conversation access denied:', event.message);
 
-            setError(event.message);
+            setJoinedConversationId(null);
+
+            if (selectedConversationRef.current?.id === event.conversationId) {
+              removeConversationFromState(event.conversationId);
+            }
+
+            setError(
+              'Conversation ini sudah tidak tersedia. Tambahkan kembali pengguna sebagai kontak terlebih dahulu.',
+            );
             break;
 
           case 'error':
@@ -613,6 +632,7 @@ export function ChatPage() {
         console.log('[WebSocket] Disconnected');
 
         setSocketConnected(false);
+        setJoinedConversationId(null);
         setTypingUserId(null);
       },
     );
@@ -645,6 +665,8 @@ export function ChatPage() {
       return;
     }
 
+    setJoinedConversationId(null);
+
     socket.send(
       JSON.stringify({
         type: 'join_conversation',
@@ -652,7 +674,7 @@ export function ChatPage() {
       }),
     );
 
-    console.log('[WebSocket] Joined selected conversation:', selectedConversation.id);
+    console.log('[WebSocket] Join requested:', selectedConversation.id);
 
     return () => {
       if (socket.readyState === WebSocket.OPEN) {
@@ -665,6 +687,8 @@ export function ChatPage() {
 
         console.log('[WebSocket] Left conversation:', selectedConversation.id);
       }
+
+      setJoinedConversationId((current) => (current === selectedConversation.id ? null : current));
     };
   }, [selectedConversation?.id, socketConnected]);
   /**
@@ -867,6 +891,11 @@ export function ChatPage() {
       return;
     }
 
+    if (joinedConversationId !== selectedConversation.id) {
+      setError('Conversation belum siap untuk mengirim pesan.');
+      return;
+    }
+
     const socket = getSocket();
 
     if (!socket || socket.readyState !== WebSocket.OPEN) {
@@ -955,7 +984,11 @@ export function ChatPage() {
   const handleContentChange = (value: string) => {
     setContent(value);
 
-    if (!selectedConversation || !socketConnected) {
+    if (
+      !selectedConversation ||
+      !socketConnected ||
+      joinedConversationId !== selectedConversation.id
+    ) {
       return;
     }
 
@@ -1511,14 +1544,25 @@ export function ChatPage() {
                   type="text"
                   value={content}
                   onChange={(event) => handleContentChange(event.target.value)}
-                  placeholder="Type a message..."
-                  disabled={sending}
+                  placeholder={
+                    joinedConversationId === selectedConversation.id
+                      ? 'Type a message...'
+                      : 'Connecting conversation...'
+                  }
+                  disabled={
+                    sending || !socketConnected || joinedConversationId !== selectedConversation.id
+                  }
                 />
 
                 <button
                   type="submit"
                   className="message-send"
-                  disabled={!content.trim() || sending || !socketConnected}
+                  disabled={
+                    !content.trim() ||
+                    sending ||
+                    !socketConnected ||
+                    joinedConversationId !== selectedConversation.id
+                  }
                   aria-label={sending ? 'Sending message' : 'Send message'}
                   title={sending ? 'Sending...' : 'Send message'}
                 >

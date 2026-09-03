@@ -505,7 +505,11 @@ export class NexChatRoom extends DurableObject<Env> {
     const allowed = await this.isUserInConversation(conversationId, attachment.userId);
 
     if (!allowed) {
-      this.sendError(ws, 'User is not a member of this conversation');
+      sendSocketEvent(ws, {
+        type: 'conversation_access_denied',
+        conversationId,
+        message: 'User is not a member of this conversation',
+      });
 
       return;
     }
@@ -535,7 +539,11 @@ export class NexChatRoom extends DurableObject<Env> {
     });
 
     if (!conversation) {
-      this.sendError(ws, 'Users must be accepted contacts before joining this conversation');
+      sendSocketEvent(ws, {
+        type: 'conversation_access_denied',
+        conversationId,
+        message: 'Users must be accepted contacts before joining this conversation',
+      });
 
       return;
     }
