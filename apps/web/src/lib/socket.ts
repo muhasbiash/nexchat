@@ -13,6 +13,19 @@ export type RealtimeEvent =
       conversation: Conversation;
     }
   | {
+      type: 'message_delivered';
+      conversationId: string;
+      messageIds: string[];
+      deliveredAt?: string;
+    }
+  | {
+      type: 'messages_read';
+      conversationId: string;
+      messageIds: string[];
+      readAt?: string;
+      readerId: string;
+    }
+  | {
       type: 'user_typing';
       conversationId: string;
       userId: string;

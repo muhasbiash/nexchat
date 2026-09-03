@@ -254,6 +254,104 @@ export function ChatPage() {
   }, []);
 
   /**
+   * Update delivery status for our messages.
+   */
+  const handleMessageDelivered = useCallback(
+    (conversationId: string, messageIds: string[], deliveredAt?: string) => {
+      if (!deliveredAt || messageIds.length === 0) {
+        return;
+      }
+
+      setMessages((currentMessages) =>
+        currentMessages.map((message) =>
+          message.conversationId === conversationId && messageIds.includes(message.id)
+            ? {
+                ...message,
+                deliveredAt,
+              }
+            : message,
+        ),
+      );
+
+      setLastMessages((currentLastMessages) => {
+        const lastMessage = currentLastMessages[conversationId];
+
+        if (!lastMessage || !messageIds.includes(lastMessage.id)) {
+          return currentLastMessages;
+        }
+
+        return {
+          ...currentLastMessages,
+          [conversationId]: {
+            ...lastMessage,
+            deliveredAt,
+          },
+        };
+      });
+    },
+    [],
+  );
+
+  /**
+   * Update read status for our messages.
+   */
+  const handleMessagesRead = useCallback(
+    (conversationId: string, messageIds: string[], readAt?: string) => {
+      if (!readAt || messageIds.length === 0) {
+        return;
+      }
+
+      setMessages((currentMessages) =>
+        currentMessages.map((message) =>
+          message.conversationId === conversationId && messageIds.includes(message.id)
+            ? {
+                ...message,
+                readAt,
+                deliveredAt: message.deliveredAt ?? readAt,
+              }
+            : message,
+        ),
+      );
+
+      setLastMessages((currentLastMessages) => {
+        const lastMessage = currentLastMessages[conversationId];
+
+        if (!lastMessage || !messageIds.includes(lastMessage.id)) {
+          return currentLastMessages;
+        }
+
+        return {
+          ...currentLastMessages,
+          [conversationId]: {
+            ...lastMessage,
+            readAt,
+            deliveredAt: lastMessage.deliveredAt ?? readAt,
+          },
+        };
+      });
+    },
+    [],
+  );
+
+  /**
+   * Mark incoming messages as read when the conversation is open.
+   */
+  const markConversationAsRead = useCallback((conversationId: string) => {
+    const socket = getSocket();
+
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    socket.send(
+      JSON.stringify({
+        type: 'mark_messages_read',
+        conversationId,
+      }),
+    );
+  }, []);
+
+  /**
    * Handle incoming realtime messages.
    */
   const handleNewMessage = useCallback(
@@ -499,6 +597,14 @@ export function ChatPage() {
             handleNewConversation(event.conversation);
             break;
 
+          case 'message_delivered':
+            handleMessageDelivered(event.conversationId, event.messageIds, event.deliveredAt);
+            break;
+
+          case 'messages_read':
+            handleMessagesRead(event.conversationId, event.messageIds, event.readAt);
+            break;
+
           case 'contact_request_received':
             setContactRequests((current) => {
               const exists = current.some((request) => request.id === event.request.id);
@@ -644,6 +750,8 @@ export function ChatPage() {
       setSocketConnected(false);
     };
   }, [
+    handleMessageDelivered,
+    handleMessagesRead,
     handleNewConversation,
     handleNewMessage,
     handleUserStoppedTyping,
@@ -692,6 +800,29 @@ export function ChatPage() {
       setJoinedConversationId((current) => (current === selectedConversation.id ? null : current));
     };
   }, [selectedConversation?.id, socketConnected]);
+
+  /**
+   * Mark incoming messages as read once the conversation
+   * has successfully joined.
+   */
+  useEffect(() => {
+    if (!joinedConversationId) {
+      return;
+    }
+
+    markConversationAsRead(joinedConversationId);
+
+    setUnreadCounts((current) => {
+      if (!(joinedConversationId in current)) {
+        return current;
+      }
+
+      const next = { ...current };
+      delete next[joinedConversationId];
+      return next;
+    });
+  }, [joinedConversationId, markConversationAsRead]);
+
   /**
    * Open an existing conversation from the sidebar.
    */
@@ -1562,7 +1693,22 @@ export function ChatPage() {
                       <div className="message-bubble">
                         <p>{message.content}</p>
 
-                        <small>{formatMessageTime(message.createdAt)}</small>
+                        <small className="message-meta">
+                          {isOwnMessage && (
+                            <span
+                              className={`message-receipt${
+                                message.readAt ? ' message-receipt-read' : ''
+                              }`}
+                              aria-label={
+                                message.readAt ? 'Read' : message.deliveredAt ? 'Delivered' : 'Sent'
+                              }
+                            >
+                              {message.deliveredAt ? '✓✓' : '✓'}
+                            </span>
+                          )}
+
+                          <span>{formatMessageTime(message.createdAt)}</span>
+                        </small>
                       </div>
                     </div>
                   );

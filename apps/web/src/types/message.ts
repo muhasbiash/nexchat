@@ -4,6 +4,8 @@ export interface Message {
   senderId: string;
   content: string;
   createdAt: string;
+  deliveredAt?: string;
+  readAt?: string;
 }
 
 export interface MessagesResponse {
