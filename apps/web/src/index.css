@@ -2879,7 +2879,9 @@ body,
     font-size: 0.72rem;
     font-weight: 800;
     line-height: 1;
-    box-shadow: 0 0 0 2px #ffffff, 0 2px 8px rgb(220 38 38 / 35%);
+    box-shadow:
+      0 0 0 2px #ffffff,
+      0 2px 8px rgb(220 38 38 / 35%);
     white-space: nowrap;
   }
 
@@ -4154,5 +4156,66 @@ body,
 
   .profile-card {
     padding: 18px 14px;
+  }
+}
+
+/* Contact search result alignment */
+.conversation-item.contact-search-result {
+  flex-direction: row;
+  align-items: center;
+  gap: 0;
+}
+
+.conversation-item.contact-search-result .conversation-user-row {
+  min-width: 0;
+  flex: 1;
+}
+
+.conversation-item.contact-search-result .contact-user-action {
+  width: auto;
+  flex-shrink: 0;
+  margin-left: auto;
+  padding-left: 12px;
+}
+
+.conversation-item.contact-search-result .contact-add-button,
+.conversation-item.contact-search-result .contact-chat-button {
+  position: relative;
+  z-index: 1;
+  pointer-events: auto;
+}
+
+@media (max-width: 768px) {
+  .conversation-item.contact-search-result {
+    min-height: 64px;
+  }
+
+  .conversation-item.contact-search-result .contact-user-action {
+    width: auto;
+    flex-shrink: 0;
+    margin-left: auto;
+    padding-left: 8px;
+  }
+}
+
+@media (max-width: 480px) {
+  .conversation-item.contact-search-result {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .conversation-item.contact-search-result .conversation-user-row {
+    gap: 8px;
+  }
+
+  .conversation-item.contact-search-result .contact-user-action {
+    padding-left: 6px;
+  }
+
+  .conversation-item.contact-search-result .contact-add-button,
+  .conversation-item.contact-search-result .contact-chat-button {
+    min-height: 34px;
+    padding: 6px 8px;
+    font-size: 0.68rem;
   }
 }

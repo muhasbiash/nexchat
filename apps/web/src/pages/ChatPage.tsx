@@ -1337,7 +1337,7 @@ export function ChatPage() {
                 const isOutgoing = isPending && contactStatus?.direction === 'outgoing';
 
                 return (
-                  <div key={item.id} className="conversation-item">
+                  <div key={item.id} className="conversation-item contact-search-result">
                     <div className="conversation-user-row">
                       {renderAvatar(item.name, item.avatarUrl)}
 
