@@ -10,7 +10,11 @@ import { handleContactsRoute } from './routes/contacts.routes';
 import { withMongoDb } from './lib/mongodb';
 import { verifyToken } from './lib/jwt';
 
-import { createConversationMessage } from './services/message.service';
+import {
+  createConversationMessage,
+  deliverConversationMessages,
+  readConversationMessages,
+} from './services/message.service';
 
 import { getUserConversations } from './services/conversation.service';
 import { areUsersContacts } from './services/contact.service';
@@ -405,8 +409,12 @@ export class NexChatRoom extends DurableObject<Env> {
     }
   }
 
-  private broadcastToConversationIncludingSender(conversationId: string, event: unknown): void {
+  private broadcastToConversationIncludingSender(
+    conversationId: string,
+    event: unknown,
+  ): Set<string> {
     const sockets = this.ctx.getWebSockets();
+    const deliveredUserIds = new Set<string>();
 
     for (const socket of sockets) {
       const attachment = this.getAttachment(socket);
@@ -419,8 +427,15 @@ export class NexChatRoom extends DurableObject<Env> {
         continue;
       }
 
+      if (socket.readyState !== WebSocket.OPEN) {
+        continue;
+      }
+
       sendSocketEvent(socket, event);
+      deliveredUserIds.add(attachment.userId);
     }
+
+    return deliveredUserIds;
   }
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
@@ -464,6 +479,12 @@ export class NexChatRoom extends DurableObject<Env> {
 
         case 'send_message': {
           await this.handleSendMessage(ws, attachment, data.conversationId, data.content);
+
+          break;
+        }
+
+        case 'mark_messages_read': {
+          await this.handleMarkMessagesRead(ws, attachment, data.conversationId);
 
           break;
         }
@@ -611,12 +632,71 @@ export class NexChatRoom extends DurableObject<Env> {
       createConversationMessage(db, conversationId, attachment.userId, content),
     );
 
-    this.broadcastToConversationIncludingSender(conversationId, {
+    const deliveredUserIds = this.broadcastToConversationIncludingSender(conversationId, {
       type: 'new_message',
       message,
     });
 
+    deliveredUserIds.delete(attachment.userId);
+
+    if (deliveredUserIds.size > 0) {
+      const deliveredMessages = await withMongoDb(this.env.MONGO_URI, (db) =>
+        deliverConversationMessages(db, conversationId, attachment.userId),
+      );
+
+      if (deliveredMessages.length > 0) {
+        const deliveredAt = deliveredMessages[0].deliveredAt;
+
+        this.broadcastToUser(attachment.userId, {
+          type: 'message_delivered',
+          conversationId,
+          messageIds: deliveredMessages.map((item) => item.id),
+          deliveredAt,
+        });
+      }
+    }
+
     console.log('[NexChatRoom] Message created:', message.id);
+  }
+
+  private async handleMarkMessagesRead(
+    ws: WebSocket,
+    attachment: SocketAttachment,
+    conversationId?: string,
+  ): Promise<void> {
+    if (!conversationId) {
+      this.sendError(ws, 'Conversation id is required');
+
+      return;
+    }
+
+    if (!attachment.memberConversationIds.includes(conversationId)) {
+      this.sendError(ws, 'Conversation access denied');
+
+      return;
+    }
+
+    const readMessages = await withMongoDb(this.env.MONGO_URI, (db) =>
+      readConversationMessages(db, conversationId, attachment.userId),
+    );
+
+    if (readMessages.length === 0) {
+      return;
+    }
+
+    const readAt = readMessages[0].readAt;
+
+    this.broadcastToConversation(
+      conversationId,
+      {
+        type: 'messages_read',
+        conversationId,
+        messageIds: readMessages.map((item) => item.id),
+        readAt,
+        readerId: attachment.userId,
+      },
+      ws,
+    );
   }
 
   private async handleTyping(

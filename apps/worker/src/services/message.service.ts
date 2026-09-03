@@ -1,6 +1,11 @@
 import { ObjectId, type Db } from 'mongodb';
 
-import { createMessage, findMessagesByConversationId } from '../repositories/message.repository';
+import {
+  createMessage,
+  findMessagesByConversationId,
+  markMessagesAsDelivered,
+  markMessagesAsRead,
+} from '../repositories/message.repository';
 
 import {
   findConversationById,
@@ -15,6 +20,8 @@ export interface MessageResponse {
   senderId: string;
   content: string;
   createdAt: Date;
+  deliveredAt?: Date;
+  readAt?: Date;
 }
 
 function serializeMessage(message: {
@@ -23,6 +30,8 @@ function serializeMessage(message: {
   senderId: ObjectId;
   content: string;
   createdAt: Date;
+  deliveredAt?: Date;
+  readAt?: Date;
 }): MessageResponse {
   return {
     id: message._id!.toString(),
@@ -30,6 +39,8 @@ function serializeMessage(message: {
     senderId: message.senderId.toString(),
     content: message.content,
     createdAt: message.createdAt,
+    deliveredAt: message.deliveredAt,
+    readAt: message.readAt,
   };
 }
 
@@ -54,7 +65,6 @@ export async function createConversationMessage(
   }
 
   const conversationObjectId = new ObjectId(conversationId);
-
   const senderObjectId = new ObjectId(senderId);
 
   const allowed = await isUserInConversation(db, conversationObjectId, senderObjectId);
@@ -106,7 +116,6 @@ export async function getConversationMessages(
   }
 
   const conversationObjectId = new ObjectId(conversationId);
-
   const userObjectId = new ObjectId(userId);
 
   const allowed = await isUserInConversation(db, conversationObjectId, userObjectId);
@@ -116,6 +125,60 @@ export async function getConversationMessages(
   }
 
   const messages = await findMessagesByConversationId(db, conversationObjectId);
+
+  return messages.map(serializeMessage);
+}
+
+export async function deliverConversationMessages(
+  db: Db,
+  conversationId: string,
+  recipientId: string,
+): Promise<MessageResponse[]> {
+  if (!ObjectId.isValid(conversationId)) {
+    throw new Error('Invalid conversation id');
+  }
+
+  if (!ObjectId.isValid(recipientId)) {
+    throw new Error('Invalid recipient id');
+  }
+
+  const conversationObjectId = new ObjectId(conversationId);
+  const recipientObjectId = new ObjectId(recipientId);
+
+  const allowed = await isUserInConversation(db, conversationObjectId, recipientObjectId);
+
+  if (!allowed) {
+    throw new Error('User is not a member of this conversation');
+  }
+
+  const messages = await markMessagesAsDelivered(db, conversationObjectId, recipientObjectId);
+
+  return messages.map(serializeMessage);
+}
+
+export async function readConversationMessages(
+  db: Db,
+  conversationId: string,
+  readerId: string,
+): Promise<MessageResponse[]> {
+  if (!ObjectId.isValid(conversationId)) {
+    throw new Error('Invalid conversation id');
+  }
+
+  if (!ObjectId.isValid(readerId)) {
+    throw new Error('Invalid reader id');
+  }
+
+  const conversationObjectId = new ObjectId(conversationId);
+  const readerObjectId = new ObjectId(readerId);
+
+  const allowed = await isUserInConversation(db, conversationObjectId, readerObjectId);
+
+  if (!allowed) {
+    throw new Error('User is not a member of this conversation');
+  }
+
+  const messages = await markMessagesAsRead(db, conversationObjectId, readerObjectId);
 
   return messages.map(serializeMessage);
 }
