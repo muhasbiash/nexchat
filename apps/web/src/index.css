@@ -4244,3 +4244,40 @@ body,
   outline-offset: 3px;
   border-radius: 10px;
 }
+
+/* Contact request + chat header profile */
+.contact-request-item .profile-user-link {
+  width: 100%;
+}
+
+.contact-request-item .profile-user-link:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+.chat-window-profile-link {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.chat-window-profile-link:hover .chat-window-header-info h2 {
+  color: #2563eb;
+}
+
+.chat-window-profile-link .chat-window-header-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-window-profile-link .chat-window-header-info h2,
+.chat-window-profile-link .chat-window-header-info small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-window-profile-link:focus-visible {
+  outline: 2px solid #60a5fa;
+  outline-offset: 3px;
+  border-radius: 10px;
+}

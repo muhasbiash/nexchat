@@ -1275,7 +1275,17 @@ export function ChatPage() {
 
                   return (
                     <div key={request.id} className="contact-request-item">
-                      <div className="conversation-user-row">
+                      <button
+                        type="button"
+                        className="profile-user-link conversation-user-row"
+                        onClick={() => {
+                          if (requester) {
+                            setSelectedProfileUser(requester);
+                            setShowProfile(true);
+                          }
+                        }}
+                        disabled={!requester}
+                      >
                         {renderAvatar(requester?.name ?? 'User', requester?.avatarUrl)}
 
                         <div className="conversation-user-info">
@@ -1283,7 +1293,7 @@ export function ChatPage() {
 
                           <span>{requester?.email ?? 'Contact request'}</span>
                         </div>
-                      </div>
+                      </button>
 
                       <div className="contact-request-actions">
                         <button
@@ -1488,13 +1498,30 @@ export function ChatPage() {
                   ←
                 </button>
 
-                {selectedUser && renderAvatar(selectedUser.name, selectedUser.avatarUrl)}
+                {selectedUser && (
+                  <button
+                    type="button"
+                    className="profile-user-link chat-window-profile-link"
+                    onClick={() => {
+                      setSelectedProfileUser(selectedUser);
+                      setShowProfile(true);
+                    }}
+                  >
+                    {renderAvatar(selectedUser.name, selectedUser.avatarUrl)}
 
-                <div className="chat-window-header-info">
-                  <h2>{selectedUser?.name ?? 'Conversation'}</h2>
+                    <div className="chat-window-header-info">
+                      <h2>{selectedUser.name}</h2>
 
-                  {selectedUser && <small>{selectedUser.email}</small>}
-                </div>
+                      <small>{selectedUser.email}</small>
+                    </div>
+                  </button>
+                )}
+
+                {!selectedUser && (
+                  <div className="chat-window-header-info">
+                    <h2>Conversation</h2>
+                  </div>
+                )}
 
                 {selectedUser &&
                   contactStatuses[selectedUser.id]?.status === 'accepted' &&
