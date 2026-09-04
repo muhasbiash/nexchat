@@ -68,8 +68,6 @@ export function ChatPage() {
   const [typingUserId, setTypingUserId] = useState<string | null>(null);
 
   const [callStatus, setCallStatus] = useState<CallStatus>('idle');
-  const [callId, setCallId] = useState<string | null>(null);
-  const [callPeerId, setCallPeerId] = useState<string | null>(null);
   const [callMode, setCallMode] = useState<'audio' | 'video'>('audio');
   const callIdRef = useRef<string | null>(null);
   const callConversationIdRef = useRef<string | null>(null);
@@ -634,8 +632,6 @@ export function ChatPage() {
     callPeerIdRef.current = null;
 
     setCallStatus('idle');
-    setCallId(null);
-    setCallPeerId(null);
     setCallMode('audio');
   }, [cleanupWebRtc]);
 
@@ -1253,8 +1249,6 @@ export function ChatPage() {
             callConversationIdRef.current = event.conversationId;
             callPeerIdRef.current = event.callerId;
 
-            setCallId(event.callId);
-            setCallPeerId(event.callerId);
             setCallMode(event.mode);
             setCallStatus('incoming');
             setError(null);
