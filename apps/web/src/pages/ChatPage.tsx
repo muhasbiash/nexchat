@@ -1034,8 +1034,6 @@ export function ChatPage() {
     callConversationIdRef.current = selectedConversation.id;
     callPeerIdRef.current = targetUserId;
 
-    setCallId(newCallId);
-    setCallPeerId(targetUserId);
     setCallMode('audio');
     setCallStatus('calling');
     setError(null);
