@@ -68,6 +68,7 @@ export function ChatPage() {
   const [showProfile, setShowProfile] = useState(false);
   const [selectedProfileUser, setSelectedProfileUser] = useState<ApiUser | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
 
   const [users, setUsers] = useState<ApiUser[]>([]);
   const usersRef = useRef<ApiUser[]>([]);
@@ -149,6 +150,30 @@ export function ChatPage() {
       cancelAnimationFrame(frame);
     };
   }, [messages, loadingMessages, typingUserId]);
+
+  useEffect(() => {
+    if (!menuOpen) {
+      return;
+    }
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target;
+
+      if (!(target instanceof Node)) {
+        return;
+      }
+
+      if (!menuRef.current?.contains(target)) {
+        setMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [menuOpen]);
 
   /**
    * Load users, conversations, and incoming contact requests.
@@ -1962,7 +1987,7 @@ export function ChatPage() {
           </div>
         </div>
 
-        <div className="chat-header-menu">
+        <div ref={menuRef} className="chat-header-menu">
           <button
             type="button"
             className="menu-button"
