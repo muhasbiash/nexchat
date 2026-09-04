@@ -3,6 +3,7 @@ export interface ApiUser {
   name: string;
   email: string;
   avatarUrl?: string | null;
+  bio?: string | null;
 }
 
 export interface UsersResponse {

@@ -7,16 +7,7 @@ import type { ApiUser } from '../types/user';
 import { NexChatLogo } from '../components/nexchat-logo';
 import { ProfilePage } from './profile-page';
 import { SettingsPage } from './settings-page';
-import {
-  ArrowRight,
-  LoaderCircle,
-  LogOut,
-  Menu,
-  Phone,
-  Settings,
-  Trash2,
-  User,
-} from 'lucide-react';
+import { ArrowRight, LoaderCircle, LogOut, Menu, Phone, Settings, User } from 'lucide-react';
 import {
   acceptContactRequest,
   createDirectConversation,
