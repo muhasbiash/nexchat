@@ -40,6 +40,26 @@ function matchesSearch(value: string | null | undefined, query: string) {
   return (value ?? '').toLowerCase().includes(query.trim().toLowerCase());
 }
 
+function showIncomingCallNotification(callerName: string, callMode: 'audio' | 'video') {
+  if (typeof window === 'undefined' || !('Notification' in window)) {
+    return;
+  }
+
+  if (document.visibilityState === 'visible' || Notification.permission !== 'granted') {
+    return;
+  }
+
+  const notification = new Notification('Incoming call', {
+    body: `${callerName} is calling you${callMode === 'video' ? ' (video)' : ''}.`,
+    tag: 'nexchat-incoming-call',
+  });
+
+  notification.onclick = () => {
+    window.focus();
+    notification.close();
+  };
+}
+
 type CallStatus = 'idle' | 'calling' | 'incoming' | 'connecting' | 'connected';
 
 export function ChatPage() {
@@ -1261,6 +1281,8 @@ export function ChatPage() {
             setCallStatus('incoming');
             setError(null);
 
+            showIncomingCallNotification(caller?.name ?? 'Someone', event.mode);
+
             console.log('[Call] Incoming call:', {
               callId: event.callId,
               callerId: event.callerId,
@@ -2384,45 +2406,17 @@ export function ChatPage() {
 
                   <div className="call-panel-info">
                     <strong>
-                      {callStatus === 'incoming'
-                        ? `${selectedUser?.name ?? 'Someone'} is calling`
-                        : callStatus === 'calling'
-                          ? `Calling ${selectedUser?.name ?? 'user'}...`
-                          : callStatus === 'connecting'
-                            ? 'Connecting...'
-                            : `Connected with ${selectedUser?.name ?? 'user'}`}
+                      {callStatus === 'calling'
+                        ? `Calling ${selectedUser?.name ?? 'user'}...`
+                        : callStatus === 'connecting'
+                          ? 'Connecting...'
+                          : `Connected with ${selectedUser?.name ?? 'user'}`}
                     </strong>
 
                     <span>{callMode === 'audio' ? 'Voice call' : 'Video call'}</span>
                   </div>
 
                   <div className="call-panel-actions">
-                    {callStatus === 'incoming' && (
-                      <>
-                        <button
-                          type="button"
-                          className="call-action-button call-action-reject"
-                          onClick={handleRejectCall}
-                          aria-label="Reject call"
-                          title="Reject call"
-                        >
-                          <Phone size={17} aria-hidden="true" />
-                          <span>Reject</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          className="call-action-button call-action-accept"
-                          onClick={handleAcceptCall}
-                          aria-label="Accept call"
-                          title="Accept call"
-                        >
-                          <Phone size={17} aria-hidden="true" />
-                          <span>Accept</span>
-                        </button>
-                      </>
-                    )}
-
                     {callStatus === 'calling' && (
                       <button
                         type="button"

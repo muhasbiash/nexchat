@@ -3603,6 +3603,162 @@ body,
   color: #f87171;
 }
 /* ========================================
+   SETTINGS NOTIFICATIONS
+   ======================================== */
+
+.settings-notification-card {
+  margin-top: 18px;
+}
+
+.settings-notification-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+
+  padding-top: 22px;
+}
+
+.settings-notification-info {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+  min-width: 0;
+}
+
+.settings-notification-info strong {
+  color: #e2e8f0;
+
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.settings-notification-info small {
+  flex-basis: 100%;
+
+  color: #64748b;
+
+  font-size: 0.68rem;
+  line-height: 1.5;
+}
+
+.settings-notification-status {
+  display: inline-flex;
+  align-items: center;
+
+  padding: 4px 8px;
+
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 999px;
+
+  background: rgba(51, 65, 85, 0.35);
+  color: #94a3b8;
+
+  font-size: 0.63rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.settings-notification-enabled {
+  border-color: rgba(34, 197, 94, 0.25);
+
+  background: rgba(34, 197, 94, 0.1);
+  color: #86efac;
+}
+
+.settings-notification-blocked {
+  border-color: rgba(239, 68, 68, 0.25);
+
+  background: rgba(239, 68, 68, 0.1);
+  color: #fca5a5;
+}
+
+.settings-notification-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+
+  flex: 0 0 auto;
+
+  padding: 9px 14px;
+
+  border: 1px solid rgba(96, 165, 250, 0.35);
+  border-radius: 9px;
+
+  background: rgba(37, 99, 235, 0.16);
+  color: #93c5fd;
+
+  font-size: 0.74rem;
+  font-weight: 700;
+
+  cursor: pointer;
+
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    transform 0.18s ease;
+}
+
+.settings-notification-button:hover {
+  border-color: rgba(96, 165, 250, 0.55);
+
+  background: rgba(37, 99, 235, 0.26);
+
+  transform: translateY(-1px);
+}
+
+.settings-notification-button:active {
+  transform: translateY(0);
+}
+
+.settings-notification-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 38px;
+  height: 38px;
+
+  flex: 0 0 auto;
+
+  border: 1px solid rgba(74, 222, 128, 0.45);
+  border-radius: 11px;
+
+  background: rgba(34, 197, 94, 0.12);
+  color: #4ade80;
+
+  box-shadow:
+    0 0 0 3px rgba(34, 197, 94, 0.05),
+    0 0 16px rgba(34, 197, 94, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.settings-notification-check svg {
+  width: 21px;
+  height: 21px;
+
+  stroke-width: 3;
+
+  filter: drop-shadow(0 0 5px rgba(74, 222, 128, 0.65));
+}
+
+.settings-notification-help {
+  margin: 16px 0 0;
+  padding: 11px 13px;
+
+  border: 1px solid rgba(239, 68, 68, 0.14);
+  border-radius: 10px;
+
+  background: rgba(239, 68, 68, 0.06);
+  color: #94a3b8;
+
+  font-size: 0.68rem;
+  line-height: 1.55;
+}
+
+/* ========================================
    SETTINGS
    ======================================== */
 
@@ -3996,6 +4152,20 @@ body,
   .settings-avatar {
     width: 72px;
     height: 72px;
+  }
+
+  .settings-notification-row {
+    align-items: flex-start;
+    gap: 14px;
+  }
+
+  .settings-notification-info {
+    flex: 1;
+  }
+
+  .settings-notification-check {
+    width: 36px;
+    height: 36px;
   }
 
   .settings-actions {

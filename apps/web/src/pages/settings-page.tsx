@@ -1,4 +1,4 @@
-import { ArrowLeft, Camera, Check, Mail, Save, User } from 'lucide-react';
+import { ArrowLeft, Bell, Camera, Check, Mail, Save, User } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import { useAuth } from '../hooks/use-auth';
@@ -20,6 +20,9 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(
+    typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'denied',
+  );
 
   useEffect(() => {
     if (!selectedAvatarFile) {
@@ -95,6 +98,30 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
       setError(error instanceof Error ? error.message : 'Failed to update profile.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleEnableCallNotifications = async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      setError('Browser notifications are not supported in this browser.');
+      return;
+    }
+
+    setError('');
+    setSuccess('');
+
+    try {
+      const permission = await Notification.requestPermission();
+
+      setNotificationPermission(permission);
+
+      if (permission === 'granted') {
+        setSuccess('Call notifications enabled.');
+      } else if (permission === 'denied') {
+        setError('Call notifications are blocked. Allow notifications in your browser settings.');
+      }
+    } catch {
+      setError('Unable to update notification permission.');
     }
   };
 
@@ -209,6 +236,67 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
               </button>
             </div>
           </form>
+        </section>
+
+        <section className="settings-card settings-notification-card">
+          <div className="settings-card-heading">
+            <div className="settings-icon">
+              <Bell size={20} />
+            </div>
+
+            <div>
+              <h2>Notifications</h2>
+              <p>Receive incoming call alerts when NexChat is in the background.</p>
+            </div>
+          </div>
+
+          <div className="settings-notification-row">
+            <div className="settings-notification-info">
+              <strong>Call notifications</strong>
+
+              {notificationPermission === 'granted' && (
+                <span className="settings-notification-status settings-notification-enabled">
+                  Enabled
+                </span>
+              )}
+
+              {notificationPermission === 'default' && (
+                <span className="settings-notification-status">Not enabled</span>
+              )}
+
+              {notificationPermission === 'denied' && (
+                <span className="settings-notification-status settings-notification-blocked">
+                  Blocked
+                </span>
+              )}
+
+              <small>Browser notifications only appear when NexChat is not the active tab.</small>
+            </div>
+
+            {notificationPermission !== 'granted' && notificationPermission !== 'denied' && (
+              <button
+                type="button"
+                className="settings-notification-button"
+                onClick={handleEnableCallNotifications}
+              >
+                <Bell size={16} />
+                Enable
+              </button>
+            )}
+
+            {notificationPermission === 'granted' && (
+              <span className="settings-notification-check" aria-label="Call notifications enabled">
+                <Check size={18} />
+              </span>
+            )}
+          </div>
+
+          {notificationPermission === 'denied' && (
+            <p className="settings-notification-help">
+              Notifications are blocked by your browser. Open the browser site settings for NexChat
+              and allow notifications.
+            </p>
+          )}
         </section>
       </div>
     </main>
