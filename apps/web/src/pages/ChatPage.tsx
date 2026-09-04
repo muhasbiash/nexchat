@@ -1620,9 +1620,9 @@ export function ChatPage() {
   /**
    * Handle contact removal from the local user.
    */
-  const handleRemoveContact = async (contactId: string) => {
+  const handleRemoveContact = async (contactId: string): Promise<boolean> => {
     if (removingContactId) {
-      return;
+      return false;
     }
 
     const confirmed = window.confirm(
@@ -1630,7 +1630,7 @@ export function ChatPage() {
     );
 
     if (!confirmed) {
-      return;
+      return false;
     }
 
     try {
@@ -1654,8 +1654,11 @@ export function ChatPage() {
       }));
 
       removeConversationWithUserFromState(targetUserId);
+
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to remove contact');
+      return false;
     } finally {
       setRemovingContactId(null);
     }
@@ -1956,6 +1959,19 @@ export function ChatPage() {
               }
             : undefined
         }
+        canRemoveContact={
+          selectedProfileUser.id !== user?.id &&
+          contactStatuses[selectedProfileUser.id]?.status === 'accepted' &&
+          Boolean(contactStatuses[selectedProfileUser.id]?.requestId)
+        }
+        onRemoveContact={
+          selectedProfileUser.id !== user?.id &&
+          contactStatuses[selectedProfileUser.id]?.status === 'accepted' &&
+          contactStatuses[selectedProfileUser.id]?.requestId
+            ? () =>
+                handleRemoveContact(contactStatuses[selectedProfileUser.id]?.requestId as string)
+            : undefined
+        }
       />
     );
   }
@@ -2016,7 +2032,11 @@ export function ChatPage() {
                 className="user-menu-item"
                 onClick={() => {
                   setMenuOpen(false);
-                  setShowProfile(true);
+
+                  if (user) {
+                    setSelectedProfileUser(user);
+                    setShowProfile(true);
+                  }
                 }}
               >
                 <User size={18} />
@@ -2351,26 +2371,6 @@ export function ChatPage() {
                     >
                       <Phone size={17} aria-hidden="true" />
                       <span>{callStatus === 'calling' ? 'Calling...' : 'Call'}</span>
-                    </button>
-                  )}
-
-                {selectedUser &&
-                  contactStatuses[selectedUser.id]?.status === 'accepted' &&
-                  contactStatuses[selectedUser.id]?.requestId && (
-                    <button
-                      type="button"
-                      className="contact-remove-button"
-                      onClick={() =>
-                        void handleRemoveContact(
-                          contactStatuses[selectedUser.id].requestId as string,
-                        )
-                      }
-                      disabled={removingContactId !== null}
-                      aria-label={`Remove ${selectedUser.name} from contacts`}
-                      title="Remove contact"
-                    >
-                      <Trash2 size={17} aria-hidden="true" />
-                      <span>{removingContactId ? 'Removing...' : 'Remove'}</span>
                     </button>
                   )}
               </div>
