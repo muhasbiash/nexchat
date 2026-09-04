@@ -82,7 +82,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await login(email, password);
   };
 
-  const updateUser = async (input: { name?: string; avatarUrl?: string | null }): Promise<void> => {
+  const updateUser = async (input: {
+    name?: string;
+    bio?: string | null;
+    avatarUrl?: string | null;
+  }): Promise<void> => {
     const data = await api<{ user: AuthUser }>('/api/auth/me', {
       method: 'PATCH',
       authenticated: true,

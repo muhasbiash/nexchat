@@ -14,6 +14,7 @@ export interface AuthUser {
   name: string;
   email: string;
   avatarUrl?: string | null;
+  bio?: string | null;
 }
 
 export async function registerUser(
@@ -43,6 +44,7 @@ export async function registerUser(
     name: user.name,
     email: user.email,
     avatarUrl: user.avatarUrl ?? null,
+    bio: user.bio ?? null,
   };
 }
 
@@ -79,6 +81,7 @@ export async function loginUser(
       name: user.name,
       email: user.email,
       avatarUrl: user.avatarUrl ?? null,
+      bio: user.bio ?? null,
     },
     token,
   };
@@ -90,6 +93,7 @@ export async function updateCurrentUser(
   input: {
     name?: string;
     avatarUrl?: string | null;
+    bio?: string | null;
   },
 ): Promise<AuthUser | null> {
   if (!ObjectId.isValid(userId)) {
@@ -99,6 +103,7 @@ export async function updateCurrentUser(
   const update: {
     name?: string;
     avatarUrl?: string | null;
+    bio?: string | null;
   } = {};
 
   if (input.name !== undefined) {
@@ -113,6 +118,10 @@ export async function updateCurrentUser(
 
   if (input.avatarUrl !== undefined) {
     update.avatarUrl = input.avatarUrl;
+  }
+
+  if (input.bio !== undefined) {
+    update.bio = input.bio?.trim() || null;
   }
 
   if (Object.keys(update).length === 0) {
@@ -130,6 +139,7 @@ export async function updateCurrentUser(
     name: user.name,
     email: user.email,
     avatarUrl: user.avatarUrl ?? null,
+    bio: user.bio ?? null,
   };
 }
 
@@ -145,6 +155,7 @@ export async function getCurrentUser(db: Db, userId: string): Promise<AuthUser |
     name: user.name,
     email: user.email,
     avatarUrl: user.avatarUrl ?? null,
+    bio: user.bio ?? null,
   };
 }
 

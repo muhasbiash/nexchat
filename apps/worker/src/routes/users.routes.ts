@@ -12,6 +12,7 @@ interface PublicUser {
   name: string;
   email: string;
   avatarUrl?: string | null;
+  bio?: string | null;
 }
 
 function json(data: unknown, status = 200): Response {

@@ -57,6 +57,7 @@ export function ChatPage() {
   const { user, logout } = useAuth();
   const [showSettings, setShowSettings] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [showProfileEdit, setShowProfileEdit] = useState(false);
   const [selectedProfileUser, setSelectedProfileUser] = useState<ApiUser | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -1936,7 +1937,7 @@ export function ChatPage() {
   if (showProfile && selectedProfileUser) {
     return (
       <ProfilePage
-        user={selectedProfileUser}
+        user={selectedProfileUser.id === user?.id ? user : selectedProfileUser}
         onBack={() => {
           setShowProfile(false);
           setSelectedProfileUser(null);
@@ -1945,8 +1946,7 @@ export function ChatPage() {
           selectedProfileUser.id === user?.id
             ? () => {
                 setShowProfile(false);
-                setSelectedProfileUser(null);
-                setShowSettings(true);
+                setShowProfileEdit(true);
               }
             : undefined
         }
@@ -1963,6 +1963,18 @@ export function ChatPage() {
                 handleRemoveContact(contactStatuses[selectedProfileUser.id]?.requestId as string)
             : undefined
         }
+      />
+    );
+  }
+
+  if (showProfileEdit) {
+    return (
+      <SettingsPage
+        profileOnly
+        onBack={() => {
+          setShowProfileEdit(false);
+          setShowProfile(true);
+        }}
       />
     );
   }

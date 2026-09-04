@@ -3,4 +3,5 @@ export interface AuthUser {
   name: string;
   email: string;
   avatarUrl?: string | null;
+  bio?: string | null;
 }

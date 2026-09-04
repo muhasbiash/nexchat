@@ -239,12 +239,14 @@ export async function handleAuthRoute(
       const body = (await request.json()) as {
         name?: unknown;
         avatarUrl?: unknown;
+        bio?: unknown;
       };
 
       const hasName = body.name !== undefined;
       const hasAvatarUrl = body.avatarUrl !== undefined;
+      const hasBio = body.bio !== undefined;
 
-      if (!hasName && !hasAvatarUrl) {
+      if (!hasName && !hasAvatarUrl && !hasBio) {
         return json(
           {
             message: 'No profile changes provided',
@@ -276,9 +278,28 @@ export async function handleAuthRoute(
         );
       }
 
+      if (hasBio && typeof body.bio !== 'string') {
+        return json(
+          {
+            message: 'Bio must be a text value',
+          },
+          400,
+        );
+      }
+
+      if (hasBio && typeof body.bio === 'string' && body.bio.trim().length > 120) {
+        return json(
+          {
+            message: 'Bio must be 120 characters or less',
+          },
+          400,
+        );
+      }
+
       const user = await updateCurrentUser(db, payload.sub, {
         ...(hasName ? { name: body.name as string } : {}),
         ...(hasAvatarUrl ? { avatarUrl: body.avatarUrl as string | null } : {}),
+        ...(hasBio ? { bio: body.bio as string } : {}),
       });
 
       if (!user) {

@@ -1,4 +1,4 @@
-import { ArrowLeft, Bell, Camera, Check, Mail, Save, User } from 'lucide-react';
+import { ArrowLeft, Bell, Camera, Check, Mail, MessageCircle, Save, User } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import { useAuth } from '../hooks/use-auth';
@@ -6,9 +6,10 @@ import { uploadAvatar } from '../lib/api';
 
 interface SettingsPageProps {
   onBack: () => void;
+  profileOnly?: boolean;
 }
 
-export function SettingsPage({ onBack }: SettingsPageProps) {
+export function SettingsPage({ onBack, profileOnly = false }: SettingsPageProps) {
   const { user, updateUser } = useAuth();
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -16,6 +17,7 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
 
   const [avatarPreview, setAvatarPreview] = useState(user?.avatarUrl ?? '');
   const [selectedAvatarFile, setSelectedAvatarFile] = useState<File | null>(null);
+  const [bio, setBio] = useState(user?.bio ?? '');
 
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState('');
@@ -29,6 +31,10 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
       setAvatarPreview(user?.avatarUrl ?? '');
     }
   }, [selectedAvatarFile, user?.avatarUrl]);
+
+  useEffect(() => {
+    setBio(user?.bio ?? '');
+  }, [user?.bio]);
 
   const handlePhotoChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -82,8 +88,11 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
         avatarUrl = await uploadAvatar(selectedAvatarFile);
       }
 
+      const nextBio = bio.trim();
+
       await updateUser({
         name: nextName,
+        bio: nextBio || null,
         ...(selectedAvatarFile ? { avatarUrl } : {}),
       });
 
@@ -93,6 +102,12 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
 
       setSelectedAvatarFile(null);
       setAvatarPreview(avatarUrl ?? '');
+
+      if (profileOnly) {
+        onBack();
+        return;
+      }
+
       setSuccess('Profile updated successfully.');
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Failed to update profile.');
@@ -147,8 +162,12 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
           </button>
 
           <div className="settings-brand">
-            <h1>Settings</h1>
-            <p>Manage your NexChat profile.</p>
+            <h1>{profileOnly ? 'Edit Profile' : 'Settings'}</h1>
+            <p>
+              {profileOnly
+                ? 'Update your name, photo, and About information.'
+                : 'Manage your NexChat profile.'}
+            </p>
           </div>
         </header>
 
@@ -159,8 +178,12 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
             </div>
 
             <div>
-              <h2>Profile</h2>
-              <p>Update your personal information and profile picture.</p>
+              <h2>{profileOnly ? 'Edit profile' : 'Profile'}</h2>
+              <p>
+                {profileOnly
+                  ? 'Make changes to how your profile appears to other people.'
+                  : 'Update your personal information and profile picture.'}
+              </p>
             </div>
           </div>
 
@@ -207,16 +230,40 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
               </div>
 
               <div className="settings-field">
-                <label htmlFor="settings-email">Email</label>
+                <label htmlFor="settings-bio">About</label>
 
-                <div className="settings-input-wrapper">
-                  <Mail size={18} />
+                <div className="settings-input-wrapper settings-textarea-wrapper">
+                  <MessageCircle size={18} />
 
-                  <input id="settings-email" type="email" value={user?.email ?? ''} disabled />
+                  <textarea
+                    id="settings-bio"
+                    value={bio}
+                    onChange={(event) => setBio(event.target.value)}
+                    maxLength={120}
+                    rows={3}
+                    placeholder="Tell people a little about yourself"
+                  />
                 </div>
 
-                <small>Email cannot be changed here.</small>
+                <div className="settings-bio-meta">
+                  <small>Let people know a little about you.</small>
+                  <span>{bio.length}/120</span>
+                </div>
               </div>
+
+              {!profileOnly && (
+                <div className="settings-field">
+                  <label htmlFor="settings-email">Email</label>
+
+                  <div className="settings-input-wrapper">
+                    <Mail size={18} />
+
+                    <input id="settings-email" type="email" value={user?.email ?? ''} disabled />
+                  </div>
+
+                  <small>Email cannot be changed here.</small>
+                </div>
+              )}
             </div>
 
             {error && <div className="settings-error">{error}</div>}
@@ -238,66 +285,71 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
           </form>
         </section>
 
-        <section className="settings-card settings-notification-card">
-          <div className="settings-card-heading">
-            <div className="settings-icon">
-              <Bell size={20} />
+        {!profileOnly && (
+          <section className="settings-card settings-notification-card">
+            <div className="settings-card-heading">
+              <div className="settings-icon">
+                <Bell size={20} />
+              </div>
+
+              <div>
+                <h2>Notifications</h2>
+                <p>Receive incoming call alerts when NexChat is in the background.</p>
+              </div>
             </div>
 
-            <div>
-              <h2>Notifications</h2>
-              <p>Receive incoming call alerts when NexChat is in the background.</p>
-            </div>
-          </div>
+            <div className="settings-notification-row">
+              <div className="settings-notification-info">
+                <strong>Call notifications</strong>
 
-          <div className="settings-notification-row">
-            <div className="settings-notification-info">
-              <strong>Call notifications</strong>
+                {notificationPermission === 'granted' && (
+                  <span className="settings-notification-status settings-notification-enabled">
+                    Enabled
+                  </span>
+                )}
+
+                {notificationPermission === 'default' && (
+                  <span className="settings-notification-status">Not enabled</span>
+                )}
+
+                {notificationPermission === 'denied' && (
+                  <span className="settings-notification-status settings-notification-blocked">
+                    Blocked
+                  </span>
+                )}
+
+                <small>Browser notifications only appear when NexChat is not the active tab.</small>
+              </div>
+
+              {notificationPermission !== 'granted' && notificationPermission !== 'denied' && (
+                <button
+                  type="button"
+                  className="settings-notification-button"
+                  onClick={handleEnableCallNotifications}
+                >
+                  <Bell size={16} />
+                  Enable
+                </button>
+              )}
 
               {notificationPermission === 'granted' && (
-                <span className="settings-notification-status settings-notification-enabled">
-                  Enabled
+                <span
+                  className="settings-notification-check"
+                  aria-label="Call notifications enabled"
+                >
+                  <Check size={18} />
                 </span>
               )}
-
-              {notificationPermission === 'default' && (
-                <span className="settings-notification-status">Not enabled</span>
-              )}
-
-              {notificationPermission === 'denied' && (
-                <span className="settings-notification-status settings-notification-blocked">
-                  Blocked
-                </span>
-              )}
-
-              <small>Browser notifications only appear when NexChat is not the active tab.</small>
             </div>
 
-            {notificationPermission !== 'granted' && notificationPermission !== 'denied' && (
-              <button
-                type="button"
-                className="settings-notification-button"
-                onClick={handleEnableCallNotifications}
-              >
-                <Bell size={16} />
-                Enable
-              </button>
+            {notificationPermission === 'denied' && (
+              <p className="settings-notification-help">
+                Notifications are blocked by your browser. Open the browser site settings for
+                NexChat and allow notifications.
+              </p>
             )}
-
-            {notificationPermission === 'granted' && (
-              <span className="settings-notification-check" aria-label="Call notifications enabled">
-                <Check size={18} />
-              </span>
-            )}
-          </div>
-
-          {notificationPermission === 'denied' && (
-            <p className="settings-notification-help">
-              Notifications are blocked by your browser. Open the browser site settings for NexChat
-              and allow notifications.
-            </p>
-          )}
-        </section>
+          </section>
+        )}
       </div>
     </main>
   );
