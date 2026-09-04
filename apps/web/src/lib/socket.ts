@@ -41,6 +41,52 @@ export type RealtimeEvent =
       message: string;
     }
   | {
+      type: 'call_incoming';
+      conversationId: string;
+      callId: string;
+      callerId: string;
+      mode: 'audio' | 'video';
+    }
+  | {
+      type: 'call_accept';
+      conversationId: string;
+      callId: string;
+      senderId: string;
+    }
+  | {
+      type: 'call_reject';
+      conversationId: string;
+      callId: string;
+      senderId: string;
+    }
+  | {
+      type: 'call_end';
+      conversationId: string;
+      callId: string;
+      senderId: string;
+    }
+  | {
+      type: 'webrtc_offer';
+      conversationId: string;
+      callId: string;
+      senderId: string;
+      sdp: unknown;
+    }
+  | {
+      type: 'webrtc_answer';
+      conversationId: string;
+      callId: string;
+      senderId: string;
+      sdp: unknown;
+    }
+  | {
+      type: 'ice_candidate';
+      conversationId: string;
+      callId: string;
+      senderId: string;
+      candidate: unknown;
+    }
+  | {
       type: 'contact_request_received';
       request: {
         id: string;

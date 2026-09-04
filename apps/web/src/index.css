@@ -301,6 +301,128 @@ input {
 
   font-size: 0.75rem;
 }
+.call-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+
+  margin-left: auto;
+  padding: 0.5rem 0.8rem;
+
+  border: 1px solid #bfdbfe;
+  border-radius: 0.55rem;
+
+  background: #eff6ff;
+  color: #2563eb;
+
+  font-size: 0.78rem;
+  font-weight: 700;
+
+  cursor: pointer;
+
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease;
+}
+
+.call-button:hover:not(:disabled) {
+  background: #dbeafe;
+  border-color: #93c5fd;
+  transform: translateY(-1px);
+}
+
+.call-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.call-panel {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+
+  min-height: 76px;
+  padding: 0.8rem 1.25rem;
+
+  border-bottom: 1px solid #dbeafe;
+
+  background: #eff6ff;
+}
+
+.call-panel-avatar {
+  flex: 0 0 auto;
+}
+
+.call-panel-info {
+  display: flex;
+  min-width: 0;
+
+  flex: 1;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.call-panel-info strong {
+  overflow: hidden;
+
+  color: #0f172a;
+
+  font-size: 0.85rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.call-panel-info span {
+  color: #64748b;
+  font-size: 0.75rem;
+}
+
+.call-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.call-action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+
+  min-height: 36px;
+  padding: 0.45rem 0.75rem;
+
+  border: 0;
+  border-radius: 0.5rem;
+
+  color: #fff;
+
+  font-size: 0.75rem;
+  font-weight: 700;
+
+  cursor: pointer;
+
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
+}
+
+.call-action-button:hover {
+  transform: translateY(-1px);
+}
+
+.call-action-button:active {
+  transform: translateY(0);
+}
+
+.call-action-accept {
+  background: #16a34a;
+}
+
+.call-action-reject {
+  background: #dc2626;
+}
 
 /* ========================================
    MESSAGE LIST

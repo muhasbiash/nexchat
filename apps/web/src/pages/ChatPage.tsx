@@ -7,7 +7,16 @@ import type { ApiUser } from '../types/user';
 import { NexChatLogo } from '../components/nexchat-logo';
 import { ProfilePage } from './profile-page';
 import { SettingsPage } from './settings-page';
-import { ArrowRight, LoaderCircle, LogOut, Menu, Settings, Trash2, User } from 'lucide-react';
+import {
+  ArrowRight,
+  LoaderCircle,
+  LogOut,
+  Menu,
+  Phone,
+  Settings,
+  Trash2,
+  User,
+} from 'lucide-react';
 import {
   acceptContactRequest,
   createDirectConversation,
@@ -30,6 +39,8 @@ function matchesSearch(value: string | null | undefined, query: string) {
 
   return (value ?? '').toLowerCase().includes(query.trim().toLowerCase());
 }
+
+type CallStatus = 'idle' | 'calling' | 'incoming' | 'connecting' | 'connected';
 
 export function ChatPage() {
   const { user, logout } = useAuth();
@@ -55,6 +66,18 @@ export function ChatPage() {
   const [socketConnected, setSocketConnected] = useState(false);
   const [joinedConversationId, setJoinedConversationId] = useState<string | null>(null);
   const [typingUserId, setTypingUserId] = useState<string | null>(null);
+
+  const [callStatus, setCallStatus] = useState<CallStatus>('idle');
+  const [callId, setCallId] = useState<string | null>(null);
+  const [callPeerId, setCallPeerId] = useState<string | null>(null);
+  const [callMode, setCallMode] = useState<'audio' | 'video'>('audio');
+  const callIdRef = useRef<string | null>(null);
+  const callConversationIdRef = useRef<string | null>(null);
+  const callPeerIdRef = useRef<string | null>(null);
+  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+  const pendingIceCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [loadingConversations, setLoadingConversations] = useState(true);
@@ -575,6 +598,537 @@ export function ChatPage() {
     [removeConversationFromState],
   );
 
+  const cleanupWebRtc = useCallback(() => {
+    const peerConnection = peerConnectionRef.current;
+
+    if (peerConnection) {
+      peerConnection.onicecandidate = null;
+      peerConnection.ontrack = null;
+      peerConnection.onconnectionstatechange = null;
+      peerConnection.oniceconnectionstatechange = null;
+      peerConnection.close();
+      peerConnectionRef.current = null;
+    }
+
+    pendingIceCandidatesRef.current = [];
+
+    const localStream = localStreamRef.current;
+
+    if (localStream) {
+      localStream.getTracks().forEach((track) => {
+        track.stop();
+      });
+      localStreamRef.current = null;
+    }
+
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.srcObject = null;
+    }
+  }, []);
+
+  const resetCallState = useCallback(() => {
+    cleanupWebRtc();
+
+    callIdRef.current = null;
+    callConversationIdRef.current = null;
+    callPeerIdRef.current = null;
+
+    setCallStatus('idle');
+    setCallId(null);
+    setCallPeerId(null);
+    setCallMode('audio');
+  }, [cleanupWebRtc]);
+
+  const sendCallSignal = useCallback((payload: Record<string, unknown>) => {
+    const currentSocket = getSocket();
+
+    if (!currentSocket || currentSocket.readyState !== WebSocket.OPEN) {
+      setError('Koneksi realtime belum tersedia.');
+      return false;
+    }
+
+    currentSocket.send(JSON.stringify(payload));
+
+    return true;
+  }, []);
+
+  const createPeerConnection = useCallback(() => {
+    const existingPeerConnection = peerConnectionRef.current;
+
+    if (existingPeerConnection) {
+      return existingPeerConnection;
+    }
+
+    const peerConnection = new RTCPeerConnection({
+      iceServers: [
+        {
+          urls: 'stun:stun.l.google.com:19302',
+        },
+      ],
+    });
+
+    peerConnection.onicecandidate = (event) => {
+      const activeCallId = callIdRef.current;
+      const conversationId = callConversationIdRef.current;
+      const peerId = callPeerIdRef.current;
+
+      if (!event.candidate || !activeCallId || !conversationId || !peerId) {
+        return;
+      }
+
+      sendCallSignal({
+        type: 'ice_candidate',
+        conversationId,
+        callId: activeCallId,
+        targetUserId: peerId,
+        candidate: event.candidate.toJSON(),
+      });
+    };
+
+    peerConnection.ontrack = (event) => {
+      console.log('[WebRTC] Remote track received:', {
+        kind: event.track.kind,
+        trackId: event.track.id,
+        streams: event.streams.length,
+      });
+
+      const [remoteStream] = event.streams;
+
+      if (!remoteStream) {
+        console.warn('[WebRTC] Remote track has no stream');
+        return;
+      }
+
+      const remoteAudio = remoteAudioRef.current;
+
+      if (!remoteAudio) {
+        console.warn('[WebRTC] Remote audio element unavailable');
+        return;
+      }
+
+      console.log('[WebRTC] Attaching remote stream:', {
+        streamId: remoteStream.id,
+        tracks: remoteStream.getTracks().map((track) => ({
+          kind: track.kind,
+          id: track.id,
+          enabled: track.enabled,
+          readyState: track.readyState,
+        })),
+      });
+
+      remoteAudio.srcObject = remoteStream;
+
+      console.log('[WebRTC] Remote audio element state:', {
+        muted: remoteAudio.muted,
+        volume: remoteAudio.volume,
+        paused: remoteAudio.paused,
+        readyState: remoteAudio.readyState,
+        networkState: remoteAudio.networkState,
+        srcObjectTracks: remoteStream.getAudioTracks().map((track) => ({
+          id: track.id,
+          enabled: track.enabled,
+          muted: track.muted,
+          readyState: track.readyState,
+        })),
+      });
+
+      void remoteAudio
+        .play()
+        .then(() => {
+          console.log('[WebRTC] Remote audio playback started');
+          console.log('[WebRTC] Remote audio state after play:', {
+            muted: remoteAudio.muted,
+            volume: remoteAudio.volume,
+            paused: remoteAudio.paused,
+            readyState: remoteAudio.readyState,
+            networkState: remoteAudio.networkState,
+          });
+        })
+        .catch((error: unknown) => {
+          console.warn('[WebRTC] Remote audio autoplay blocked:', error);
+        });
+    };
+
+    peerConnection.onconnectionstatechange = () => {
+      console.log('[WebRTC] Connection state:', peerConnection.connectionState);
+
+      if (peerConnection.connectionState === 'connected') {
+        setCallStatus('connected');
+      }
+
+      if (
+        peerConnection.connectionState === 'failed' ||
+        peerConnection.connectionState === 'closed'
+      ) {
+        resetCallState();
+      }
+    };
+
+    peerConnection.oniceconnectionstatechange = () => {
+      console.log('[WebRTC] ICE connection state:', peerConnection.iceConnectionState);
+    };
+
+    peerConnectionRef.current = peerConnection;
+
+    return peerConnection;
+  }, [resetCallState, sendCallSignal]);
+
+  const prepareLocalAudio = useCallback(async () => {
+    if (localStreamRef.current) {
+      return localStreamRef.current;
+    }
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: true,
+      video: false,
+    });
+
+    localStreamRef.current = stream;
+
+    const peerConnection = createPeerConnection();
+
+    stream.getTracks().forEach((track) => {
+      peerConnection.addTrack(track, stream);
+    });
+
+    console.log('[WebRTC] Local microphone ready');
+
+    return stream;
+  }, [createPeerConnection]);
+
+  const createWebRtcOffer = useCallback(async () => {
+    const activeCallId = callIdRef.current;
+    const conversationId = callConversationIdRef.current;
+    const peerId = callPeerIdRef.current;
+
+    if (!activeCallId || !conversationId || !peerId) {
+      throw new Error('Active call context is unavailable');
+    }
+
+    await prepareLocalAudio();
+
+    const peerConnection = peerConnectionRef.current;
+
+    if (!peerConnection) {
+      throw new Error('WebRTC peer connection is unavailable');
+    }
+    const offer = await peerConnection.createOffer();
+
+    await peerConnection.setLocalDescription(offer);
+
+    sendCallSignal({
+      type: 'webrtc_offer',
+      conversationId,
+      callId: activeCallId,
+      targetUserId: peerId,
+      sdp: offer,
+    });
+
+    console.log('[WebRTC] Offer sent:', activeCallId);
+  }, [prepareLocalAudio, sendCallSignal]);
+
+  const flushPendingIceCandidates = useCallback(async () => {
+    const peerConnection = peerConnectionRef.current;
+
+    if (!peerConnection || !peerConnection.remoteDescription) {
+      return;
+    }
+
+    const pendingCandidates = pendingIceCandidatesRef.current;
+
+    if (pendingCandidates.length === 0) {
+      return;
+    }
+
+    pendingIceCandidatesRef.current = [];
+
+    for (const candidate of pendingCandidates) {
+      try {
+        await peerConnection.addIceCandidate(candidate);
+
+        console.log('[WebRTC] Queued ICE candidate applied');
+      } catch (error: unknown) {
+        console.error('[WebRTC] Failed to apply queued ICE candidate:', error);
+      }
+    }
+  }, []);
+
+  const handleWebRtcOffer = useCallback(
+    async (incomingCallId: string, conversationId: string, senderId: string, sdp: unknown) => {
+      if (
+        incomingCallId !== callIdRef.current ||
+        conversationId !== callConversationIdRef.current ||
+        senderId !== callPeerIdRef.current
+      ) {
+        console.warn('[WebRTC] Ignoring offer for inactive call:', incomingCallId);
+        return;
+      }
+
+      try {
+        await prepareLocalAudio();
+
+        const peerConnection = peerConnectionRef.current;
+
+        if (!peerConnection) {
+          throw new Error('WebRTC peer connection is unavailable');
+        }
+
+        if (peerConnection.signalingState !== 'stable') {
+          console.warn('[WebRTC] Ignoring offer in invalid signaling state:', {
+            callId: incomingCallId,
+            signalingState: peerConnection.signalingState,
+          });
+          return;
+        }
+
+        if (!sdp || typeof sdp !== 'object') {
+          throw new Error('Invalid WebRTC offer');
+        }
+
+        await peerConnection.setRemoteDescription(sdp as RTCSessionDescriptionInit);
+
+        await flushPendingIceCandidates();
+
+        const answer = await peerConnection.createAnswer();
+
+        await peerConnection.setLocalDescription(answer);
+
+        sendCallSignal({
+          type: 'webrtc_answer',
+          conversationId,
+          callId: incomingCallId,
+          targetUserId: senderId,
+          sdp: answer,
+        });
+
+        console.log('[WebRTC] Answer sent:', incomingCallId);
+      } catch (error: unknown) {
+        console.error('[WebRTC] Failed to handle offer:', error);
+
+        setError('Panggilan gagal disiapkan. Periksa izin microphone dan koneksi.');
+      }
+    },
+    [flushPendingIceCandidates, prepareLocalAudio, sendCallSignal],
+  );
+
+  const handleWebRtcAnswer = useCallback(
+    async (incomingCallId: string, conversationId: string, senderId: string, sdp: unknown) => {
+      if (
+        incomingCallId !== callIdRef.current ||
+        conversationId !== callConversationIdRef.current ||
+        senderId !== callPeerIdRef.current
+      ) {
+        console.warn('[WebRTC] Ignoring answer for inactive call:', incomingCallId);
+        return;
+      }
+
+      try {
+        const peerConnection = peerConnectionRef.current;
+
+        if (!peerConnection) {
+          throw new Error('WebRTC peer connection is unavailable');
+        }
+
+        if (peerConnection.signalingState !== 'have-local-offer') {
+          console.warn('[WebRTC] Ignoring answer in invalid signaling state:', {
+            callId: incomingCallId,
+            signalingState: peerConnection.signalingState,
+          });
+          return;
+        }
+
+        if (!sdp || typeof sdp !== 'object') {
+          throw new Error('Invalid WebRTC answer');
+        }
+
+        await peerConnection.setRemoteDescription(sdp as RTCSessionDescriptionInit);
+
+        await flushPendingIceCandidates();
+
+        console.log('[WebRTC] Answer applied:', incomingCallId);
+      } catch (error: unknown) {
+        console.error('[WebRTC] Failed to handle answer:', error);
+
+        setError('Jawaban panggilan gagal diproses. Periksa koneksi internet.');
+      }
+    },
+    [flushPendingIceCandidates],
+  );
+
+  const handleIceCandidate = useCallback(
+    async (
+      incomingCallId: string,
+      conversationId: string,
+      senderId: string,
+      candidate: unknown,
+    ) => {
+      if (
+        incomingCallId !== callIdRef.current ||
+        conversationId !== callConversationIdRef.current ||
+        senderId !== callPeerIdRef.current
+      ) {
+        console.warn('[WebRTC] Ignoring ICE candidate for inactive call:', incomingCallId);
+        return;
+      }
+
+      if (!candidate || typeof candidate !== 'object') {
+        console.error('[WebRTC] Invalid ICE candidate:', incomingCallId);
+        return;
+      }
+
+      const peerConnection = peerConnectionRef.current;
+
+      if (!peerConnection) {
+        console.warn('[WebRTC] Peer connection unavailable, queueing ICE candidate');
+        pendingIceCandidatesRef.current.push(candidate as RTCIceCandidateInit);
+        return;
+      }
+
+      if (!peerConnection.remoteDescription) {
+        console.log('[WebRTC] Queueing ICE candidate until remote description is ready');
+
+        pendingIceCandidatesRef.current.push(candidate as RTCIceCandidateInit);
+
+        return;
+      }
+
+      try {
+        await peerConnection.addIceCandidate(candidate as RTCIceCandidateInit);
+
+        console.log('[WebRTC] ICE candidate applied:', incomingCallId);
+      } catch (error: unknown) {
+        console.error('[WebRTC] Failed to handle ICE candidate:', error);
+      }
+    },
+    [],
+  );
+  const handleStartCall = useCallback(() => {
+    if (
+      !user ||
+      !selectedConversation ||
+      !selectedUser ||
+      !socketConnected ||
+      contactStatuses[selectedUser.id]?.status !== 'accepted'
+    ) {
+      return;
+    }
+
+    const targetUserId = getOtherParticipantId(selectedConversation);
+
+    if (!targetUserId) {
+      setError('Pengguna tujuan panggilan tidak ditemukan.');
+      return;
+    }
+
+    const newCallId = crypto.randomUUID();
+
+    const sent = sendCallSignal({
+      type: 'call_initiate',
+      conversationId: selectedConversation.id,
+      callId: newCallId,
+      targetUserId,
+      mode: 'audio',
+    });
+
+    if (!sent) {
+      return;
+    }
+
+    callIdRef.current = newCallId;
+    callConversationIdRef.current = selectedConversation.id;
+    callPeerIdRef.current = targetUserId;
+
+    setCallId(newCallId);
+    setCallPeerId(targetUserId);
+    setCallMode('audio');
+    setCallStatus('calling');
+    setError(null);
+
+    console.log('[Call] Initiated:', newCallId);
+  }, [contactStatuses, selectedConversation, selectedUser, sendCallSignal, socketConnected, user]);
+
+  const handleAcceptCall = useCallback(async () => {
+    const activeCallId = callIdRef.current;
+    const conversationId = callConversationIdRef.current;
+    const peerId = callPeerIdRef.current;
+
+    if (!activeCallId || !conversationId || !peerId || !user || callStatus !== 'incoming') {
+      return;
+    }
+
+    try {
+      setError(null);
+
+      await prepareLocalAudio();
+
+      const sent = sendCallSignal({
+        type: 'call_accept',
+        conversationId,
+        callId: activeCallId,
+        targetUserId: peerId,
+      });
+
+      if (!sent) {
+        cleanupWebRtc();
+        return;
+      }
+
+      setCallStatus('connecting');
+
+      console.log('[Call] Accepted:', activeCallId);
+    } catch (error: unknown) {
+      console.error('[WebRTC] Microphone access failed:', error);
+
+      cleanupWebRtc();
+      setError('Microphone tidak dapat digunakan. Pastikan izin microphone diberikan.');
+    }
+  }, [callStatus, cleanupWebRtc, prepareLocalAudio, sendCallSignal, user]);
+
+  const handleRejectCall = useCallback(() => {
+    const activeCallId = callIdRef.current;
+    const conversationId = callConversationIdRef.current;
+    const peerId = callPeerIdRef.current;
+
+    if (!activeCallId || !conversationId || !peerId || !user || callStatus !== 'incoming') {
+      return;
+    }
+
+    const sent = sendCallSignal({
+      type: 'call_reject',
+      conversationId,
+      callId: activeCallId,
+      targetUserId: peerId,
+    });
+
+    if (!sent) {
+      return;
+    }
+
+    console.log('[Call] Rejected:', activeCallId);
+    resetCallState();
+  }, [callStatus, resetCallState, sendCallSignal, user]);
+
+  const handleEndCall = useCallback(() => {
+    const activeCallId = callIdRef.current;
+    const conversationId = callConversationIdRef.current;
+    const peerId = callPeerIdRef.current;
+
+    if (!activeCallId || !conversationId || !peerId || !user) {
+      resetCallState();
+      return;
+    }
+
+    sendCallSignal({
+      type: 'call_end',
+      conversationId,
+      callId: activeCallId,
+      targetUserId: peerId,
+    });
+
+    console.log('[Call] Ended locally:', activeCallId);
+    resetCallState();
+  }, [resetCallState, sendCallSignal, user]);
+
   /**
    * Connect native WebSocket once when ChatPage mounts.
    */
@@ -694,6 +1248,70 @@ export function ChatPage() {
             });
             break;
 
+          case 'call_incoming':
+            callIdRef.current = event.callId;
+            callConversationIdRef.current = event.conversationId;
+            callPeerIdRef.current = event.callerId;
+
+            setCallId(event.callId);
+            setCallPeerId(event.callerId);
+            setCallMode(event.mode);
+            setCallStatus('incoming');
+            setError(null);
+
+            console.log('[Call] Incoming call:', event.callId);
+            break;
+
+          case 'call_accept':
+            if (event.callId === callIdRef.current) {
+              setCallStatus('connecting');
+              console.log('[Call] Accepted:', event.callId);
+
+              void createWebRtcOffer().catch((error: unknown) => {
+                console.error('[WebRTC] Failed to create offer:', error);
+                setError('Panggilan gagal dimulai. Pastikan microphone tersedia.');
+                resetCallState();
+              });
+            }
+            break;
+
+          case 'call_reject':
+            if (event.callId === callIdRef.current) {
+              console.log('[Call] Rejected:', event.callId);
+              resetCallState();
+            }
+            break;
+
+          case 'call_end':
+            if (event.callId === callIdRef.current) {
+              console.log('[Call] Ended:', event.callId);
+              resetCallState();
+            }
+            break;
+
+          case 'webrtc_offer':
+            console.log('[WebRTC] Offer received:', event.callId);
+
+            void handleWebRtcOffer(event.callId, event.conversationId, event.senderId, event.sdp);
+            break;
+
+          case 'webrtc_answer':
+            console.log('[WebRTC] Answer received:', event.callId);
+
+            void handleWebRtcAnswer(event.callId, event.conversationId, event.senderId, event.sdp);
+            break;
+
+          case 'ice_candidate':
+            console.log('[WebRTC] ICE candidate received:', event.callId);
+
+            void handleIceCandidate(
+              event.callId,
+              event.conversationId,
+              event.senderId,
+              event.candidate,
+            );
+            break;
+
           case 'joined_conversation':
             if (selectedConversationRef.current?.id === event.conversationId) {
               setJoinedConversationId(event.conversationId);
@@ -741,6 +1359,7 @@ export function ChatPage() {
         setSocketConnected(false);
         setJoinedConversationId(null);
         setTypingUserId(null);
+        resetCallState();
       },
     );
 
@@ -750,13 +1369,17 @@ export function ChatPage() {
       setSocketConnected(false);
     };
   }, [
-    handleMessageDelivered,
+    createWebRtcOffer,
     handleMessagesRead,
     handleNewConversation,
     handleNewMessage,
     handleUserStoppedTyping,
     handleUserTyping,
+    handleWebRtcAnswer,
+    handleWebRtcOffer,
+    handleIceCandidate,
     removeConversationWithUserFromState,
+    resetCallState,
     user?.id,
   ]);
 
@@ -1604,6 +2227,8 @@ export function ChatPage() {
         </aside>
 
         <section className="chat-window">
+          <audio ref={remoteAudioRef} autoPlay playsInline />
+
           {!selectedConversation && (
             <div className="empty-chat">
               <h2>Welcome to NexChat</h2>
@@ -1655,6 +2280,27 @@ export function ChatPage() {
                 )}
 
                 {selectedUser &&
+                  selectedConversation &&
+                  contactStatuses[selectedUser.id]?.status === 'accepted' && (
+                    <button
+                      type="button"
+                      className="call-button"
+                      onClick={() => void handleStartCall()}
+                      disabled={
+                        !socketConnected ||
+                        callStatus !== 'idle' ||
+                        creatingConversation ||
+                        removingContactId !== null
+                      }
+                      aria-label={`Call ${selectedUser.name}`}
+                      title={callStatus === 'calling' ? 'Calling...' : `Call ${selectedUser.name}`}
+                    >
+                      <Phone size={17} aria-hidden="true" />
+                      <span>{callStatus === 'calling' ? 'Calling...' : 'Call'}</span>
+                    </button>
+                  )}
+
+                {selectedUser &&
                   contactStatuses[selectedUser.id]?.status === 'accepted' &&
                   contactStatuses[selectedUser.id]?.requestId && (
                     <button
@@ -1674,6 +2320,94 @@ export function ChatPage() {
                     </button>
                   )}
               </div>
+              {callStatus !== 'idle' && (
+                <div className="call-panel" role="dialog" aria-live="polite">
+                  <div className="call-panel-avatar">
+                    {renderAvatar(selectedUser?.name ?? 'User', selectedUser?.avatarUrl)}
+                  </div>
+
+                  <div className="call-panel-info">
+                    <strong>
+                      {callStatus === 'incoming'
+                        ? `${selectedUser?.name ?? 'Someone'} is calling`
+                        : callStatus === 'calling'
+                          ? `Calling ${selectedUser?.name ?? 'user'}...`
+                          : callStatus === 'connecting'
+                            ? 'Connecting...'
+                            : `Connected with ${selectedUser?.name ?? 'user'}`}
+                    </strong>
+
+                    <span>{callMode === 'audio' ? 'Voice call' : 'Video call'}</span>
+                  </div>
+
+                  <div className="call-panel-actions">
+                    {callStatus === 'incoming' && (
+                      <>
+                        <button
+                          type="button"
+                          className="call-action-button call-action-reject"
+                          onClick={handleRejectCall}
+                          aria-label="Reject call"
+                          title="Reject call"
+                        >
+                          <Phone size={17} aria-hidden="true" />
+                          <span>Reject</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          className="call-action-button call-action-accept"
+                          onClick={handleAcceptCall}
+                          aria-label="Accept call"
+                          title="Accept call"
+                        >
+                          <Phone size={17} aria-hidden="true" />
+                          <span>Accept</span>
+                        </button>
+                      </>
+                    )}
+
+                    {callStatus === 'calling' && (
+                      <button
+                        type="button"
+                        className="call-action-button call-action-reject"
+                        onClick={handleEndCall}
+                        aria-label="Cancel call"
+                        title="Cancel call"
+                      >
+                        <Phone size={17} aria-hidden="true" />
+                        <span>Cancel</span>
+                      </button>
+                    )}
+
+                    {callStatus === 'connecting' && (
+                      <button
+                        type="button"
+                        className="call-action-button call-action-reject"
+                        onClick={handleEndCall}
+                        aria-label="End call"
+                        title="End call"
+                      >
+                        <Phone size={17} aria-hidden="true" />
+                        <span>End</span>
+                      </button>
+                    )}
+
+                    {callStatus === 'connected' && (
+                      <button
+                        type="button"
+                        className="call-action-button call-action-reject"
+                        onClick={handleEndCall}
+                        aria-label="End call"
+                        title="End call"
+                      >
+                        <Phone size={17} aria-hidden="true" />
+                        <span>End</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
 
               <div className="message-list">
                 {loadingMessages && <p className="message-status">Loading messages...</p>}

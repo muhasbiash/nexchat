@@ -37,6 +37,13 @@ interface ClientMessage {
   type: string;
   conversationId?: string;
   content?: string;
+
+  callId?: string;
+  targetUserId?: string;
+  callerId?: string;
+  mode?: 'audio' | 'video';
+  sdp?: unknown;
+  candidate?: unknown;
 }
 
 interface SocketAttachment {
@@ -501,6 +508,100 @@ export class NexChatRoom extends DurableObject<Env> {
           break;
         }
 
+        case 'call_initiate': {
+          await this.handleCallInitiate(
+            ws,
+            attachment,
+            data.conversationId,
+            data.callId,
+            data.targetUserId,
+            data.mode,
+          );
+
+          break;
+        }
+
+        case 'call_accept': {
+          await this.handleCallSignal(
+            ws,
+            attachment,
+            'call_accept',
+            data.conversationId,
+            data.callId,
+            data.targetUserId,
+          );
+
+          break;
+        }
+
+        case 'call_reject': {
+          await this.handleCallSignal(
+            ws,
+            attachment,
+            'call_reject',
+            data.conversationId,
+            data.callId,
+            data.targetUserId,
+          );
+
+          break;
+        }
+
+        case 'call_end': {
+          await this.handleCallSignal(
+            ws,
+            attachment,
+            'call_end',
+            data.conversationId,
+            data.callId,
+            data.targetUserId,
+          );
+
+          break;
+        }
+
+        case 'webrtc_offer': {
+          await this.handleWebRtcSignal(
+            ws,
+            attachment,
+            'webrtc_offer',
+            data.conversationId,
+            data.callId,
+            data.targetUserId,
+            data.sdp,
+          );
+
+          break;
+        }
+
+        case 'webrtc_answer': {
+          await this.handleWebRtcSignal(
+            ws,
+            attachment,
+            'webrtc_answer',
+            data.conversationId,
+            data.callId,
+            data.targetUserId,
+            data.sdp,
+          );
+
+          break;
+        }
+
+        case 'ice_candidate': {
+          await this.handleWebRtcSignal(
+            ws,
+            attachment,
+            'ice_candidate',
+            data.conversationId,
+            data.callId,
+            data.targetUserId,
+            data.candidate,
+          );
+
+          break;
+        }
+
         default: {
           this.sendError(ws, `Unknown event type: ${data.type}`);
         }
@@ -510,6 +611,171 @@ export class NexChatRoom extends DurableObject<Env> {
 
       this.sendError(ws, error instanceof Error ? error.message : 'WebSocket request failed');
     }
+  }
+
+  private async getCallParticipants(
+    conversationId: string,
+    callerId: string,
+    targetUserId: string,
+  ): Promise<boolean> {
+    if (!ObjectId.isValid(conversationId)) {
+      return false;
+    }
+
+    if (!ObjectId.isValid(callerId) || !ObjectId.isValid(targetUserId)) {
+      return false;
+    }
+
+    if (callerId === targetUserId) {
+      return false;
+    }
+
+    return withMongoDb(this.env.MONGO_URI, async (db) => {
+      const conversation = await findConversationById(db, new ObjectId(conversationId));
+
+      if (!conversation) {
+        return false;
+      }
+
+      const participantIds = conversation.participants.map((participant) => participant.toString());
+
+      if (!participantIds.includes(callerId) || !participantIds.includes(targetUserId)) {
+        return false;
+      }
+
+      return areUsersContacts(db, callerId, targetUserId);
+    });
+  }
+
+  private async handleCallInitiate(
+    ws: WebSocket,
+    attachment: SocketAttachment,
+    conversationId?: string,
+    callId?: string,
+    targetUserId?: string,
+    mode?: 'audio' | 'video',
+  ): Promise<void> {
+    if (!conversationId || !callId || !targetUserId) {
+      this.sendError(ws, 'Call conversation, call id, and target user are required');
+
+      return;
+    }
+
+    if (mode !== 'audio' && mode !== 'video') {
+      this.sendError(ws, 'Invalid call mode');
+
+      return;
+    }
+
+    const allowed = await this.getCallParticipants(conversationId, attachment.userId, targetUserId);
+
+    if (!allowed) {
+      this.sendError(ws, 'Call is only available between accepted contacts in the conversation');
+
+      return;
+    }
+
+    this.broadcastToUser(targetUserId, {
+      type: 'call_incoming',
+      conversationId,
+      callId,
+      callerId: attachment.userId,
+      mode,
+    });
+
+    sendSocketEvent(ws, {
+      type: 'call_outgoing',
+      conversationId,
+      callId,
+      targetUserId,
+      mode,
+    });
+
+    console.log(
+      '[NexChatRoom] Call initiated:',
+      attachment.userId,
+      '->',
+      targetUserId,
+      callId,
+      mode,
+    );
+  }
+
+  private async handleCallSignal(
+    ws: WebSocket,
+    attachment: SocketAttachment,
+    eventType: 'call_accept' | 'call_reject' | 'call_end',
+    conversationId?: string,
+    callId?: string,
+    targetUserId?: string,
+  ): Promise<void> {
+    if (!conversationId || !callId || !targetUserId) {
+      this.sendError(ws, 'Call conversation, call id, and target user are required');
+
+      return;
+    }
+
+    const allowed = await this.getCallParticipants(conversationId, attachment.userId, targetUserId);
+
+    if (!allowed) {
+      this.sendError(ws, 'Call participant validation failed');
+
+      return;
+    }
+
+    this.broadcastToUser(targetUserId, {
+      type: eventType,
+      conversationId,
+      callId,
+      senderId: attachment.userId,
+    });
+
+    console.log(
+      '[NexChatRoom] Call signal:',
+      eventType,
+      attachment.userId,
+      '->',
+      targetUserId,
+      callId,
+    );
+  }
+
+  private async handleWebRtcSignal(
+    ws: WebSocket,
+    attachment: SocketAttachment,
+    eventType: 'webrtc_offer' | 'webrtc_answer' | 'ice_candidate',
+    conversationId?: string,
+    callId?: string,
+    targetUserId?: string,
+    payload?: unknown,
+  ): Promise<void> {
+    if (!conversationId || !callId || !targetUserId) {
+      this.sendError(ws, 'WebRTC conversation, call id, and target user are required');
+
+      return;
+    }
+
+    if (payload === undefined || payload === null) {
+      this.sendError(ws, 'WebRTC payload is required');
+
+      return;
+    }
+
+    const allowed = await this.getCallParticipants(conversationId, attachment.userId, targetUserId);
+
+    if (!allowed) {
+      this.sendError(ws, 'WebRTC participant validation failed');
+
+      return;
+    }
+
+    this.broadcastToUser(targetUserId, {
+      type: eventType,
+      conversationId,
+      callId,
+      senderId: attachment.userId,
+      [eventType === 'ice_candidate' ? 'candidate' : 'sdp']: payload,
+    });
   }
 
   private async handleJoinConversation(
