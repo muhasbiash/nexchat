@@ -1,4 +1,12 @@
-import { ArrowRight, Check, LockKeyhole, Mail, MessageCircle, User } from 'lucide-react';
+import {
+  ArrowRight,
+  Check,
+  LockKeyhole,
+  Mail,
+  MessageCircle,
+  UnlockKeyhole,
+  User,
+} from 'lucide-react';
 import { useState } from 'react';
 
 import { NexChatLogo } from '../components/nexchat-logo';
@@ -15,6 +23,8 @@ export function RegisterPage({ onLogin }: RegisterPageProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -112,11 +122,19 @@ export function RegisterPage({ onLogin }: RegisterPageProps) {
               <label htmlFor="register-password">Password</label>
 
               <div className="auth-input-wrapper">
-                <LockKeyhole size={18} />
+                <button
+                  type="button"
+                  className="auth-password-toggle"
+                  onClick={() => setShowPassword((current) => !current)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <UnlockKeyhole size={18} /> : <LockKeyhole size={18} />}
+                </button>
 
                 <input
                   id="register-password"
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   minLength={8}
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
@@ -131,11 +149,19 @@ export function RegisterPage({ onLogin }: RegisterPageProps) {
               <label htmlFor="register-confirm-password">Confirm password</label>
 
               <div className="auth-input-wrapper">
-                <LockKeyhole size={18} />
+                <button
+                  type="button"
+                  className="auth-password-toggle"
+                  onClick={() => setShowConfirmPassword((current) => !current)}
+                  aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+                  title={showConfirmPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showConfirmPassword ? <UnlockKeyhole size={18} /> : <LockKeyhole size={18} />}
+                </button>
 
                 <input
                   id="register-confirm-password"
-                  type="password"
+                  type={showConfirmPassword ? 'text' : 'password'}
                   minLength={8}
                   value={confirmPassword}
                   onChange={(event) => setConfirmPassword(event.target.value)}

@@ -1,4 +1,4 @@
-import { ArrowRight, LockKeyhole, Mail, MessageCircle } from 'lucide-react';
+import { ArrowRight, LockKeyhole, Mail, MessageCircle, UnlockKeyhole } from 'lucide-react';
 import { useState } from 'react';
 
 import { NexChatLogo } from '../components/nexchat-logo';
@@ -13,6 +13,7 @@ export function LoginPage({ onRegister }: LoginPageProps) {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -81,11 +82,19 @@ export function LoginPage({ onRegister }: LoginPageProps) {
               <label htmlFor="login-password">Password</label>
 
               <div className="auth-input-wrapper">
-                <LockKeyhole size={18} />
+                <button
+                  type="button"
+                  className="auth-password-toggle"
+                  onClick={() => setShowPassword((current) => !current)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <UnlockKeyhole size={18} /> : <LockKeyhole size={18} />}
+                </button>
 
                 <input
                   id="login-password"
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   placeholder="Enter your password"

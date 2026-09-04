@@ -2009,6 +2009,65 @@ input {
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.09);
 }
 
+.auth-password-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 18px;
+
+  width: 18px;
+  height: 18px;
+
+  padding: 0;
+  margin: 0;
+
+  border: 0;
+  outline: 0;
+
+  background: transparent;
+  color: #475569;
+
+  cursor: pointer;
+
+  transition:
+    color 160ms ease,
+    filter 160ms ease,
+    transform 160ms ease;
+}
+
+.auth-password-toggle:hover {
+  color: #94a3b8;
+  transform: scale(1.06);
+}
+
+.auth-password-toggle:focus-visible {
+  color: #60a5fa;
+
+  border-radius: 5px;
+
+  outline: 2px solid rgba(96, 165, 250, 0.45);
+  outline-offset: 3px;
+}
+
+.auth-password-toggle:active {
+  transform: scale(0.94);
+}
+
+.auth-password-toggle svg {
+  width: 18px;
+  height: 18px;
+}
+
+.auth-password-toggle[aria-label='Hide password'] {
+  color: #60a5fa;
+  filter: drop-shadow(0 0 5px rgba(96, 165, 250, 0.45));
+}
+
+.auth-password-toggle[aria-label='Hide password']:hover {
+  color: #93c5fd;
+  filter: drop-shadow(0 0 7px rgba(96, 165, 250, 0.6));
+}
+
 .auth-input-wrapper input {
   width: 100%;
   min-width: 0;
