@@ -424,6 +424,185 @@ input {
   background: #dc2626;
 }
 
+.incoming-call-popup {
+  position: fixed;
+  top: 96px;
+  right: 24px;
+  z-index: 1000;
+
+  width: min(380px, calc(100vw - 32px));
+  padding: 1rem;
+
+  border: 1px solid rgba(96, 165, 250, 0.3);
+  border-radius: 1rem;
+
+  background: rgba(255, 255, 255, 0.98);
+
+  box-shadow:
+    0 20px 50px rgba(15, 23, 42, 0.22),
+    0 0 0 1px rgba(255, 255, 255, 0.7);
+
+  animation: incoming-call-popup-in 220ms ease-out;
+}
+
+.incoming-call-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.85rem;
+}
+
+.incoming-call-label {
+  color: #2563eb;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.incoming-call-pulse {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.45);
+  animation: incoming-call-pulse 1.5s infinite;
+}
+
+.incoming-call-content {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.incoming-call-avatar {
+  position: relative;
+  flex: 0 0 auto;
+  padding: 3px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  animation: incoming-call-avatar 1.6s ease-in-out infinite;
+}
+
+.incoming-call-avatar .avatar {
+  width: 52px;
+  height: 52px;
+}
+
+.incoming-call-info {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.incoming-call-info strong {
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 0.95rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.incoming-call-info span {
+  color: #475569;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.incoming-call-info small {
+  color: #64748b;
+  font-size: 0.7rem;
+}
+
+.incoming-call-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+
+.incoming-call-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 40px;
+  padding: 0.55rem 0.8rem;
+  border: 0;
+  border-radius: 0.65rem;
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    filter 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.incoming-call-button:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.04);
+}
+
+.incoming-call-button:active {
+  transform: translateY(0);
+}
+
+.incoming-call-reject {
+  background: #dc2626;
+  box-shadow: 0 5px 14px rgba(220, 38, 38, 0.2);
+}
+
+.incoming-call-accept {
+  background: #16a34a;
+  box-shadow: 0 5px 14px rgba(22, 163, 74, 0.2);
+}
+
+@keyframes incoming-call-popup-in {
+  from {
+    opacity: 0;
+    transform: translateY(-12px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes incoming-call-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.45);
+  }
+  70% {
+    box-shadow: 0 0 0 7px rgba(34, 197, 94, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+  }
+}
+
+@keyframes incoming-call-avatar {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.035);
+  }
+}
+
+@media (max-width: 640px) {
+  .incoming-call-popup {
+    top: 76px;
+    right: 12px;
+    left: 12px;
+    width: auto;
+  }
+}
+
 /* ========================================
    MESSAGE LIST
    ======================================== */

@@ -50,6 +50,12 @@ export function ChatPage() {
   const [menuOpen, setMenuOpen] = useState(false);
 
   const [users, setUsers] = useState<ApiUser[]>([]);
+  const usersRef = useRef<ApiUser[]>([]);
+
+  useEffect(() => {
+    usersRef.current = users;
+  }, [users]);
+
   const [contactRequests, setContactRequests] = useState<ContactRequest[]>([]);
   const [processingContactRequestId, setProcessingContactRequestId] = useState<string | null>(null);
   const [contactStatuses, setContactStatuses] = useState<Record<string, ContactRequestStatus>>({});
@@ -68,6 +74,7 @@ export function ChatPage() {
   const [typingUserId, setTypingUserId] = useState<string | null>(null);
 
   const [callStatus, setCallStatus] = useState<CallStatus>('idle');
+  const [incomingCaller, setIncomingCaller] = useState<ApiUser | null>(null);
   const [callMode, setCallMode] = useState<'audio' | 'video'>('audio');
   const callIdRef = useRef<string | null>(null);
   const callConversationIdRef = useRef<string | null>(null);
@@ -1242,17 +1249,25 @@ export function ChatPage() {
             });
             break;
 
-          case 'call_incoming':
+          case 'call_incoming': {
+            const caller = usersRef.current.find((item) => item.id === event.callerId) ?? null;
+
             callIdRef.current = event.callId;
             callConversationIdRef.current = event.conversationId;
             callPeerIdRef.current = event.callerId;
 
+            setIncomingCaller(caller);
             setCallMode(event.mode);
             setCallStatus('incoming');
             setError(null);
 
-            console.log('[Call] Incoming call:', event.callId);
+            console.log('[Call] Incoming call:', {
+              callId: event.callId,
+              callerId: event.callerId,
+              callerName: caller?.name ?? 'Unknown caller',
+            });
             break;
+          }
 
           case 'call_accept':
             if (event.callId === callIdRef.current) {
@@ -2312,7 +2327,56 @@ export function ChatPage() {
                     </button>
                   )}
               </div>
-              {callStatus !== 'idle' && (
+              {callStatus === 'incoming' && (
+                <div className="incoming-call-popup" role="alertdialog" aria-live="assertive">
+                  <div className="incoming-call-header">
+                    <span className="incoming-call-label">Incoming call</span>
+                    <span className="incoming-call-pulse" aria-hidden="true" />
+                  </div>
+
+                  <div className="incoming-call-content">
+                    <div className="incoming-call-avatar">
+                      {renderAvatar(
+                        incomingCaller?.name ?? 'Someone',
+                        incomingCaller?.avatarUrl,
+                        'avatar',
+                      )}
+                    </div>
+
+                    <div className="incoming-call-info">
+                      <strong>{incomingCaller?.name ?? 'Someone'}</strong>
+                      <span>{callMode === 'audio' ? 'Voice call' : 'Video call'}</span>
+                      <small>is calling you...</small>
+                    </div>
+                  </div>
+
+                  <div className="incoming-call-actions">
+                    <button
+                      type="button"
+                      className="incoming-call-button incoming-call-reject"
+                      onClick={handleRejectCall}
+                      aria-label="Reject incoming call"
+                      title="Reject call"
+                    >
+                      <Phone size={18} aria-hidden="true" />
+                      <span>Decline</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      className="incoming-call-button incoming-call-accept"
+                      onClick={handleAcceptCall}
+                      aria-label="Accept incoming call"
+                      title="Accept call"
+                    >
+                      <Phone size={18} aria-hidden="true" />
+                      <span>Accept</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {callStatus !== 'idle' && callStatus !== 'incoming' && (
                 <div className="call-panel" role="dialog" aria-live="polite">
                   <div className="call-panel-avatar">
                     {renderAvatar(selectedUser?.name ?? 'User', selectedUser?.avatarUrl)}
