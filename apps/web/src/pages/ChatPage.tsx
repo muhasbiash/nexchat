@@ -89,6 +89,9 @@ export function ChatPage() {
   const [callStatus, setCallStatus] = useState<CallStatus>('idle');
   const [incomingCaller, setIncomingCaller] = useState<ApiUser | null>(null);
   const [callMode, setCallMode] = useState<'audio' | 'video'>('audio');
+  const [callDuration, setCallDuration] = useState(0);
+  const callConnectedAtRef = useRef<number | null>(null);
+  const callDurationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const callIdRef = useRef<string | null>(null);
   const callConversationIdRef = useRef<string | null>(null);
   const callPeerIdRef = useRef<string | null>(null);
@@ -671,13 +674,56 @@ export function ChatPage() {
   const resetCallState = useCallback(() => {
     cleanupWebRtc();
 
+    if (callDurationIntervalRef.current) {
+      clearInterval(callDurationIntervalRef.current);
+      callDurationIntervalRef.current = null;
+    }
+
+    callConnectedAtRef.current = null;
+
     callIdRef.current = null;
     callConversationIdRef.current = null;
     callPeerIdRef.current = null;
 
+    setIncomingCaller(null);
+    setCallDuration(0);
     setCallStatus('idle');
     setCallMode('audio');
   }, [cleanupWebRtc]);
+
+  useEffect(() => {
+    if (callStatus !== 'connected') {
+      return;
+    }
+
+    const connectedAt = Date.now();
+    callConnectedAtRef.current = connectedAt;
+    setCallDuration(0);
+
+    callDurationIntervalRef.current = setInterval(() => {
+      const startedAt = callConnectedAtRef.current;
+
+      if (!startedAt) {
+        return;
+      }
+
+      setCallDuration(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1000);
+
+    return () => {
+      if (callDurationIntervalRef.current) {
+        clearInterval(callDurationIntervalRef.current);
+        callDurationIntervalRef.current = null;
+      }
+    };
+  }, [callStatus]);
+
+  const formatCallDuration = useCallback((totalSeconds: number) => {
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+
+    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  }, []);
 
   const sendCallSignal = useCallback((payload: Record<string, unknown>) => {
     const currentSocket = getSocket();
@@ -2377,116 +2423,6 @@ export function ChatPage() {
                     </button>
                   )}
               </div>
-              {callStatus === 'incoming' && (
-                <div className="incoming-call-popup" role="alertdialog" aria-live="assertive">
-                  <div className="incoming-call-header">
-                    <span className="incoming-call-label">Incoming call</span>
-                    <span className="incoming-call-pulse" aria-hidden="true" />
-                  </div>
-
-                  <div className="incoming-call-content">
-                    <div className="incoming-call-avatar">
-                      {renderAvatar(
-                        incomingCaller?.name ?? 'Someone',
-                        incomingCaller?.avatarUrl,
-                        'avatar',
-                      )}
-                    </div>
-
-                    <div className="incoming-call-info">
-                      <strong>{incomingCaller?.name ?? 'Someone'}</strong>
-                      <span>{callMode === 'audio' ? 'Voice call' : 'Video call'}</span>
-                      <small>is calling you...</small>
-                    </div>
-                  </div>
-
-                  <div className="incoming-call-actions">
-                    <button
-                      type="button"
-                      className="incoming-call-button incoming-call-reject"
-                      onClick={handleRejectCall}
-                      aria-label="Reject incoming call"
-                      title="Reject call"
-                    >
-                      <Phone size={18} aria-hidden="true" />
-                      <span>Decline</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      className="incoming-call-button incoming-call-accept"
-                      onClick={handleAcceptCall}
-                      aria-label="Accept incoming call"
-                      title="Accept call"
-                    >
-                      <Phone size={18} aria-hidden="true" />
-                      <span>Accept</span>
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {callStatus !== 'idle' && callStatus !== 'incoming' && (
-                <div className="call-panel" role="dialog" aria-live="polite">
-                  <div className="call-panel-avatar">
-                    {renderAvatar(selectedUser?.name ?? 'User', selectedUser?.avatarUrl)}
-                  </div>
-
-                  <div className="call-panel-info">
-                    <strong>
-                      {callStatus === 'calling'
-                        ? `Calling ${selectedUser?.name ?? 'user'}...`
-                        : callStatus === 'connecting'
-                          ? 'Connecting...'
-                          : `Connected with ${selectedUser?.name ?? 'user'}`}
-                    </strong>
-
-                    <span>{callMode === 'audio' ? 'Voice call' : 'Video call'}</span>
-                  </div>
-
-                  <div className="call-panel-actions">
-                    {callStatus === 'calling' && (
-                      <button
-                        type="button"
-                        className="call-action-button call-action-reject"
-                        onClick={handleEndCall}
-                        aria-label="Cancel call"
-                        title="Cancel call"
-                      >
-                        <Phone size={17} aria-hidden="true" />
-                        <span>Cancel</span>
-                      </button>
-                    )}
-
-                    {callStatus === 'connecting' && (
-                      <button
-                        type="button"
-                        className="call-action-button call-action-reject"
-                        onClick={handleEndCall}
-                        aria-label="End call"
-                        title="End call"
-                      >
-                        <Phone size={17} aria-hidden="true" />
-                        <span>End</span>
-                      </button>
-                    )}
-
-                    {callStatus === 'connected' && (
-                      <button
-                        type="button"
-                        className="call-action-button call-action-reject"
-                        onClick={handleEndCall}
-                        aria-label="End call"
-                        title="End call"
-                      >
-                        <Phone size={17} aria-hidden="true" />
-                        <span>End</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
-
               <div className="message-list">
                 {loadingMessages && <p className="message-status">Loading messages...</p>}
 
@@ -2579,6 +2515,131 @@ export function ChatPage() {
           )}
         </section>
       </div>
+
+      {callStatus === 'incoming' && (
+        <div className="incoming-call-popup" role="alertdialog" aria-live="assertive">
+          <div className="incoming-call-header">
+            <span className="incoming-call-label">Incoming call</span>
+            <span className="incoming-call-pulse" aria-hidden="true" />
+          </div>
+
+          <div className="incoming-call-content">
+            <div className="incoming-call-avatar">
+              {renderAvatar(incomingCaller?.name ?? 'Someone', incomingCaller?.avatarUrl, 'avatar')}
+            </div>
+
+            <div className="incoming-call-info">
+              <strong>{incomingCaller?.name ?? 'Someone'}</strong>
+              <span>{callMode === 'audio' ? 'Voice call' : 'Video call'}</span>
+              <small>is calling you...</small>
+            </div>
+          </div>
+
+          <div className="incoming-call-actions">
+            <button
+              type="button"
+              className="incoming-call-button incoming-call-reject"
+              onClick={handleRejectCall}
+              aria-label="Reject incoming call"
+              title="Reject call"
+            >
+              <Phone size={18} aria-hidden="true" />
+              <span>Decline</span>
+            </button>
+
+            <button
+              type="button"
+              className="incoming-call-button incoming-call-accept"
+              onClick={handleAcceptCall}
+              aria-label="Accept incoming call"
+              title="Accept call"
+            >
+              <Phone size={18} aria-hidden="true" />
+              <span>Accept</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {callStatus !== 'idle' && callStatus !== 'incoming' && (
+        <div className="call-panel" role="dialog" aria-live="polite">
+          <div className="call-panel-avatar">
+            {renderAvatar(
+              callPeerIdRef.current
+                ? (usersRef.current.find((user) => user.id === callPeerIdRef.current)?.name ??
+                    'User')
+                : 'User',
+              callPeerIdRef.current
+                ? usersRef.current.find((user) => user.id === callPeerIdRef.current)?.avatarUrl
+                : undefined,
+            )}
+          </div>
+
+          <div className="call-panel-info">
+            <strong>
+              {callStatus === 'calling'
+                ? `Calling ${
+                    callPeerIdRef.current
+                      ? (usersRef.current.find((user) => user.id === callPeerIdRef.current)?.name ??
+                        'user')
+                      : 'user'
+                  }...`
+                : callStatus === 'connecting'
+                  ? 'Connecting...'
+                  : 'Connected'}
+            </strong>
+
+            <span>{callMode === 'audio' ? 'Voice call' : 'Video call'}</span>
+
+            {callStatus === 'connected' && (
+              <small className="call-duration" aria-label="Call duration">
+                {formatCallDuration(callDuration)}
+              </small>
+            )}
+          </div>
+
+          <div className="call-panel-actions">
+            {callStatus === 'calling' && (
+              <button
+                type="button"
+                className="call-action-button call-action-reject"
+                onClick={handleEndCall}
+                aria-label="Cancel call"
+                title="Cancel call"
+              >
+                <Phone size={17} aria-hidden="true" />
+                <span>Cancel</span>
+              </button>
+            )}
+
+            {callStatus === 'connecting' && (
+              <button
+                type="button"
+                className="call-action-button call-action-reject"
+                onClick={handleEndCall}
+                aria-label="End call"
+                title="End call"
+              >
+                <Phone size={17} aria-hidden="true" />
+                <span>End</span>
+              </button>
+            )}
+
+            {callStatus === 'connected' && (
+              <button
+                type="button"
+                className="call-action-button call-action-reject"
+                onClick={handleEndCall}
+                aria-label="End call"
+                title="End call"
+              >
+                <Phone size={17} aria-hidden="true" />
+                <span>End</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {error && <p className="chat-error">{error}</p>}
     </div>
