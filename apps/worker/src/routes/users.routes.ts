@@ -68,6 +68,7 @@ export async function handleUsersRoute(
         name: user.name,
         email: user.email,
         avatarUrl: user.avatarUrl ?? null,
+        bio: user.bio ?? null,
       }));
 
       return json({
