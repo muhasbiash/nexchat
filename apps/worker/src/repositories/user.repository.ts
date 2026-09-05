@@ -7,6 +7,9 @@ export interface User {
   passwordHash: string;
   avatarUrl?: string | null;
   bio?: string | null;
+  emailVerified?: boolean;
+  emailVerificationTokenHash?: string | null;
+  emailVerificationExpiresAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -15,6 +18,9 @@ export interface CreateUserInput {
   name: string;
   email: string;
   passwordHash: string;
+  emailVerified?: boolean;
+  emailVerificationTokenHash?: string | null;
+  emailVerificationExpiresAt?: Date | null;
 }
 
 function getUsersCollection(db: Db) {
@@ -64,6 +70,9 @@ export async function createUser(db: Db, input: CreateUserInput): Promise<User> 
     name: input.name,
     email: input.email,
     passwordHash: input.passwordHash,
+    emailVerified: input.emailVerified,
+    emailVerificationTokenHash: input.emailVerificationTokenHash ?? null,
+    emailVerificationExpiresAt: input.emailVerificationExpiresAt ?? null,
     createdAt: now,
     updatedAt: now,
   };
@@ -74,6 +83,59 @@ export async function createUser(db: Db, input: CreateUserInput): Promise<User> 
     ...user,
     _id: result.insertedId,
   };
+}
+
+export async function verifyUserEmailByTokenHash(
+  db: Db,
+  tokenHash: string,
+  now: Date,
+): Promise<User | null> {
+  const result = await getUsersCollection(db).findOneAndUpdate(
+    {
+      emailVerificationTokenHash: tokenHash,
+      emailVerified: false,
+      emailVerificationExpiresAt: { $gt: now },
+    },
+    {
+      $set: {
+        emailVerified: true,
+        updatedAt: now,
+      },
+      $unset: {
+        emailVerificationTokenHash: '',
+        emailVerificationExpiresAt: '',
+      },
+    },
+    {
+      returnDocument: 'after',
+    },
+  );
+
+  return result;
+}
+
+export async function updateUserEmailVerification(
+  db: Db,
+  userId: ObjectId,
+  input: {
+    emailVerificationTokenHash: string;
+    emailVerificationExpiresAt: Date;
+  },
+): Promise<User | null> {
+  const result = await getUsersCollection(db).findOneAndUpdate(
+    { _id: userId },
+    {
+      $set: {
+        emailVerificationTokenHash: input.emailVerificationTokenHash,
+        emailVerificationExpiresAt: input.emailVerificationExpiresAt,
+        emailVerified: false,
+        updatedAt: new Date(),
+      },
+    },
+    { returnDocument: 'after' },
+  );
+
+  return result;
 }
 
 export async function updateUser(

@@ -11,6 +11,7 @@ import { useState } from 'react';
 
 import { NexChatLogo } from '../components/nexchat-logo';
 import { useAuth } from '../hooks/use-auth';
+import { api } from '../lib/api';
 
 interface RegisterPageProps {
   onLogin: () => void;
@@ -28,6 +29,37 @@ export function RegisterPage({ onLogin }: RegisterPageProps) {
 
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [registrationComplete, setRegistrationComplete] = useState(false);
+  const [registeredEmail, setRegisteredEmail] = useState('');
+  const [resendingVerification, setResendingVerification] = useState(false);
+  const [resendMessage, setResendMessage] = useState('');
+
+  const handleResendVerification = async () => {
+    if (!registeredEmail || resendingVerification) return;
+
+    setResendingVerification(true);
+    setResendMessage('');
+
+    try {
+      const response = await api<{ message: string }>(
+        '/api/auth/resend-verification',
+        {
+          method: 'POST',
+          body: JSON.stringify({ email: registeredEmail }),
+        },
+      );
+
+      setResendMessage(response.message);
+    } catch (error) {
+      setResendMessage(
+        error instanceof Error
+          ? error.message
+          : 'Unable to resend the verification email.',
+      );
+    } finally {
+      setResendingVerification(false);
+    }
+  };
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -62,7 +94,11 @@ export function RegisterPage({ onLogin }: RegisterPageProps) {
     setLoading(true);
 
     try {
-      await register(name.trim(), email.trim(), password);
+      const normalizedEmail = email.trim();
+
+      await register(name.trim(), normalizedEmail, password);
+      setRegisteredEmail(normalizedEmail);
+      setRegistrationComplete(true);
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Registration failed');
     } finally {
@@ -96,124 +132,170 @@ export function RegisterPage({ onLogin }: RegisterPageProps) {
             </div>
           </div>
 
-          <form className="auth-form" onSubmit={handleSubmit}>
-            <div className="auth-field">
-              <label htmlFor="register-name">Full name</label>
-
-              <div className="auth-input-wrapper">
-                <User size={18} />
-
-                <input
-                  id="register-name"
-                  type="text"
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                  placeholder="Your name"
-                  autoComplete="name"
-                  required
-                />
+          {registrationComplete ? (
+            <div className="auth-success" role="status">
+              <div className="auth-success-icon">
+                <Check size={22} />
               </div>
-            </div>
 
-            <div className="auth-field">
-              <label htmlFor="register-email">Email</label>
+              <div className="auth-success-content">
+                <h2>Check your email</h2>
 
-              <div className="auth-input-wrapper">
+                <p>
+                  We sent a verification link to <strong>{registeredEmail}</strong>. Please verify
+                  your email before signing in.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                className="auth-primary-button"
+                onClick={handleResendVerification}
+                disabled={resendingVerification}
+              >
+                <span>
+                  {resendingVerification
+                    ? 'Sending...'
+                    : 'Resend verification email'}
+                </span>
                 <Mail size={18} />
+              </button>
 
-                <input
-                  id="register-email"
-                  type="email"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  placeholder="you@example.com"
-                  autoComplete="email"
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="auth-field">
-              <label htmlFor="register-password">Password</label>
-
-              <div className="auth-input-wrapper">
-                <button
-                  type="button"
-                  className="auth-password-toggle"
-                  onClick={() => setShowPassword((current) => !current)}
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
-                  title={showPassword ? 'Hide password' : 'Show password'}
-                >
-                  {showPassword ? <UnlockKeyhole size={18} /> : <LockKeyhole size={18} />}
-                </button>
-
-                <input
-                  id="register-password"
-                  type={showPassword ? 'text' : 'password'}
-                  minLength={8}
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  placeholder="Create a password"
-                  autoComplete="new-password"
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="auth-field">
-              <label htmlFor="register-confirm-password">Confirm password</label>
-
-              <div className="auth-input-wrapper">
-                <button
-                  type="button"
-                  className="auth-password-toggle"
-                  onClick={() => setShowConfirmPassword((current) => !current)}
-                  aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
-                  title={showConfirmPassword ? 'Hide password' : 'Show password'}
-                >
-                  {showConfirmPassword ? <UnlockKeyhole size={18} /> : <LockKeyhole size={18} />}
-                </button>
-
-                <input
-                  id="register-confirm-password"
-                  type={showConfirmPassword ? 'text' : 'password'}
-                  minLength={8}
-                  value={confirmPassword}
-                  onChange={(event) => setConfirmPassword(event.target.value)}
-                  placeholder="Repeat your password"
-                  autoComplete="new-password"
-                  required
-                />
-              </div>
-
-              {confirmPassword && password === confirmPassword && (
-                <div className="auth-field-success">
-                  <Check size={14} />
-                  Passwords match
-                </div>
+              {resendMessage && (
+                <p className="auth-helper-text">{resendMessage}</p>
               )}
+
+              <button type="button" className="auth-secondary-button" onClick={onLogin}>
+                <span>Go to sign in</span>
+                <ArrowRight size={18} />
+              </button>
             </div>
+          ) : (
+            <>
+              <form className="auth-form" onSubmit={handleSubmit}>
+                <div className="auth-field">
+                  <label htmlFor="register-name">Full name</label>
 
-            {error && (
-              <div className="auth-error" role="alert">
-                {error}
+                  <div className="auth-input-wrapper">
+                    <User size={18} />
+
+                    <input
+                      id="register-name"
+                      type="text"
+                      value={name}
+                      onChange={(event) => setName(event.target.value)}
+                      placeholder="Your name"
+                      autoComplete="name"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="auth-field">
+                  <label htmlFor="register-email">Email</label>
+
+                  <div className="auth-input-wrapper">
+                    <Mail size={18} />
+
+                    <input
+                      id="register-email"
+                      type="email"
+                      value={email}
+                      onChange={(event) => setEmail(event.target.value)}
+                      placeholder="you@example.com"
+                      autoComplete="email"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="auth-field">
+                  <label htmlFor="register-password">Password</label>
+
+                  <div className="auth-input-wrapper">
+                    <button
+                      type="button"
+                      className="auth-password-toggle"
+                      onClick={() => setShowPassword((current) => !current)}
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      title={showPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showPassword ? <UnlockKeyhole size={18} /> : <LockKeyhole size={18} />}
+                    </button>
+
+                    <input
+                      id="register-password"
+                      type={showPassword ? 'text' : 'password'}
+                      minLength={8}
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      placeholder="Create a password"
+                      autoComplete="new-password"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="auth-field">
+                  <label htmlFor="register-confirm-password">Confirm password</label>
+
+                  <div className="auth-input-wrapper">
+                    <button
+                      type="button"
+                      className="auth-password-toggle"
+                      onClick={() => setShowConfirmPassword((current) => !current)}
+                      aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+                      title={showConfirmPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showConfirmPassword ? (
+                        <UnlockKeyhole size={18} />
+                      ) : (
+                        <LockKeyhole size={18} />
+                      )}
+                    </button>
+
+                    <input
+                      id="register-confirm-password"
+                      type={showConfirmPassword ? 'text' : 'password'}
+                      minLength={8}
+                      value={confirmPassword}
+                      onChange={(event) => setConfirmPassword(event.target.value)}
+                      placeholder="Repeat your password"
+                      autoComplete="new-password"
+                      required
+                    />
+                  </div>
+
+                  {confirmPassword && password === confirmPassword && (
+                    <div className="auth-field-success">
+                      <Check size={14} />
+                      Passwords match
+                    </div>
+                  )}
+                </div>
+
+                {error && (
+                  <div className="auth-error" role="alert">
+                    {error}
+                  </div>
+                )}
+
+                <button type="submit" className="auth-primary-button" disabled={loading}>
+                  <span>{loading ? 'Creating account...' : 'Create account'}</span>
+
+                  {!loading && <ArrowRight size={18} />}
+                </button>
+              </form>
+
+              <div className="auth-divider">
+                <span>Already have an account?</span>
               </div>
-            )}
 
-            <button type="submit" className="auth-primary-button" disabled={loading}>
-              <span>{loading ? 'Creating account...' : 'Create account'}</span>
-
-              {!loading && <ArrowRight size={18} />}
-            </button>
-          </form>
-
-          <div className="auth-divider">
-            <span>Already have an account?</span>
-          </div>
-
-          <button type="button" className="auth-secondary-button" onClick={onLogin}>
-            Sign in
-          </button>
+              <button type="button" className="auth-secondary-button" onClick={onLogin}>
+                Sign in
+              </button>
+            </>
+          )}
         </section>
 
         <p className="auth-footer">

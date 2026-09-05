@@ -78,8 +78,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         password,
       }),
     });
-
-    await login(email, password);
   };
 
   const updateUser = async (input: {

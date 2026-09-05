@@ -2,12 +2,15 @@ import type { Db } from 'mongodb';
 
 import { createAvatarUploadSignature } from '../lib/cloudinary';
 import { PasswordValidationError } from '../lib/password';
+import { sendEmailVerification } from '../lib/email-verification';
 
 import {
   getCurrentUser,
   loginUser,
   registerUser,
+  resendEmailVerification,
   updateCurrentUser,
+  verifyEmail,
   verifyToken,
 } from '../services/auth.service';
 
@@ -16,6 +19,9 @@ interface AuthEnv {
   CLOUDINARY_CLOUD_NAME: string;
   CLOUDINARY_API_KEY: string;
   CLOUDINARY_API_SECRET: string;
+  RESEND_API_KEY: string;
+  EMAIL_FROM: string;
+  EMAIL_VERIFICATION_URL: string;
 }
 
 function json(data: unknown, status = 200): Response {
@@ -68,7 +74,9 @@ export async function handleAuthRoute(
         );
       }
 
-      const user = await registerUser(db, name, email, password);
+      const registration = await registerUser(db, name, email, password);
+
+      const { emailVerificationToken: _emailVerificationToken, ...user } = registration;
 
       return json(
         {
@@ -106,6 +114,73 @@ export async function handleAuthRoute(
     }
   }
 
+  if (request.method === 'POST' && pathname === '/api/auth/resend-verification') {
+    try {
+      const body = (await request.json()) as {
+        email?: string;
+      };
+
+      await resendEmailVerification(db, body.email ?? '', env);
+
+      return json({
+        message:
+          'If the email is registered and unverified, a verification email has been sent.',
+      });
+    } catch (error) {
+      console.error('[Auth] Resend verification error:', error);
+
+      return json(
+        {
+          message: 'Unable to send verification email',
+        },
+        500,
+      );
+    }
+  }
+
+  if (request.method === 'GET' && pathname === '/api/auth/verify-email') {
+    try {
+      const token = new URL(request.url).searchParams.get('token');
+
+      if (!token) {
+        return json(
+          {
+            message: 'Invalid or expired email verification token',
+          },
+          400,
+        );
+      }
+
+      const user = await verifyEmail(db, token);
+
+      return json({
+        message: 'Email verified successfully',
+        user,
+      });
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === 'Invalid or expired email verification token'
+      ) {
+        return json(
+          {
+            message: error.message,
+          },
+          400,
+        );
+      }
+
+      console.error('[Auth] Email verification error:', error);
+
+      return json(
+        {
+          message: 'Internal server error',
+        },
+        500,
+      );
+    }
+  }
+
   if (request.method === 'POST' && pathname === '/api/auth/login') {
     try {
       const body = (await request.json()) as {
@@ -128,6 +203,15 @@ export async function handleAuthRoute(
 
       return json(result);
     } catch (error) {
+      if (error instanceof Error && error.message === 'Email verification required') {
+        return json(
+          {
+            message: error.message,
+          },
+          403,
+        );
+      }
+
       if (error instanceof Error && error.message === 'Invalid email or password') {
         return json(
           {

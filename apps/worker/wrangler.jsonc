@@ -8,6 +8,8 @@
 
   "vars": {
     "ENVIRONMENT": "production",
+    "EMAIL_FROM": "NexChat <noreply@YOUR_VERIFIED_DOMAIN>",
+    "EMAIL_VERIFICATION_URL": "https://nexchat-sites.vercel.app/verify-email",
   },
 
   "durable_objects": {

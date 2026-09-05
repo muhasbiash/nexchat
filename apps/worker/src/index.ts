@@ -30,6 +30,9 @@ export interface Env {
   CLOUDINARY_CLOUD_NAME: string;
   CLOUDINARY_API_KEY: string;
   CLOUDINARY_API_SECRET: string;
+  RESEND_API_KEY: string;
+  EMAIL_FROM: string;
+  EMAIL_VERIFICATION_URL: string;
   NEXCHAT_ROOM: DurableObjectNamespace<NexChatRoom>;
 }
 

@@ -5,6 +5,7 @@ import { ChatPage } from './pages/ChatPage';
 import { HomePage } from './pages/HomePage';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
+import { VerifyEmailPage } from './pages/VerifyEmailPage';
 
 type Page = 'home' | 'login' | 'register';
 
@@ -12,6 +13,18 @@ function App() {
   const { user, loading } = useAuth();
 
   const [page, setPage] = useState<Page>('home');
+  const isVerifyEmailPage = window.location.pathname === '/verify-email';
+
+  if (isVerifyEmailPage) {
+    return (
+      <VerifyEmailPage
+        onLogin={() => {
+          window.history.replaceState({}, '', '/');
+          setPage('login');
+        }}
+      />
+    );
+  }
 
   if (loading) {
     return (
