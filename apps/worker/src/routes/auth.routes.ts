@@ -1,6 +1,7 @@
 import type { Db } from 'mongodb';
 
 import { createAvatarUploadSignature } from '../lib/cloudinary';
+import { PasswordValidationError } from '../lib/password';
 
 import {
   getCurrentUser,
@@ -76,6 +77,15 @@ export async function handleAuthRoute(
         201,
       );
     } catch (error) {
+      if (error instanceof PasswordValidationError) {
+        return json(
+          {
+            message: error.message,
+          },
+          400,
+        );
+      }
+
       if (error instanceof Error && error.message === 'Email already registered') {
         return json(
           {

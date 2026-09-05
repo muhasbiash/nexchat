@@ -44,6 +44,21 @@ export function RegisterPage({ onLogin }: RegisterPageProps) {
       return;
     }
 
+    if (!/[A-Z]/.test(password)) {
+      setError('Password must contain at least one uppercase letter.');
+      return;
+    }
+
+    if (!/[a-z]/.test(password)) {
+      setError('Password must contain at least one lowercase letter.');
+      return;
+    }
+
+    if (!/[0-9]/.test(password)) {
+      setError('Password must contain at least one number.');
+      return;
+    }
+
     setLoading(true);
 
     try {

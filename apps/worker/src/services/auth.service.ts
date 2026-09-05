@@ -8,6 +8,7 @@ import {
   updateUser,
 } from '../repositories/user.repository';
 import { createToken, verifyToken } from '../lib/jwt';
+import { validatePassword } from '../lib/password';
 
 export interface AuthUser {
   id: string;
@@ -30,6 +31,8 @@ export async function registerUser(
   if (existingUser) {
     throw new Error('Email already registered');
   }
+
+  validatePassword(password);
 
   const passwordHash = await bcrypt.hash(password, 10);
 
