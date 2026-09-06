@@ -44,3 +44,11 @@ docker-data/
 apps/worker/.dev.vars
 .vercel
 .env*
+
+# Local backup / temporary files
+*.bak
+*.backup
+*-backup
+*.stage2a-backup
+*.14L-backup
+tmp-mongo-test.cjs
