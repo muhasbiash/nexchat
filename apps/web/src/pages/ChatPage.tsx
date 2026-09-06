@@ -2463,8 +2463,10 @@ export function ChatPage() {
                 })}
 
                 {typingUserId && (
-                  <div className="typing-indicator">
-                    <span>{selectedUser?.name ?? 'Someone'} is typing...</span>
+                  <div className="typing-indicator" aria-label="User is typing">
+                    <span />
+                    <span />
+                    <span />
                   </div>
                 )}
 

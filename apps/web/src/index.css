@@ -746,23 +746,51 @@ input {
 
 .typing-indicator {
   display: flex;
-
   align-items: center;
+  gap: 4px;
 
+  align-self: flex-start;
   width: fit-content;
 
-  margin-top: 0.2rem;
+  margin: 4px 0;
+  padding: 9px 13px;
 
-  padding: 0.55rem 0.75rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px 14px 14px 5px;
 
-  border-radius: 1rem;
-
-  background: #e2e8f0;
-
-  color: #64748b;
-
-  font-size: 0.75rem;
+  background: #ffffff;
 }
+
+.typing-indicator span {
+  width: 5px;
+  height: 5px;
+
+  border-radius: 50%;
+  background: #64748b;
+
+  animation: typing-bounce 1.2s infinite ease-in-out;
+}
+
+.typing-indicator span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.typing-indicator span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes typing-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+  }
+
+  30% {
+    transform: translateY(-3px);
+  }
+}
+
 
 @keyframes send-spin {
   to {
@@ -1224,17 +1252,6 @@ input {
 
 .message-list::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
-}
-.typing-indicator {
-  align-self: flex-start;
-  margin: 4px 0;
-  padding: 9px 13px;
-  background: #ffffff;
-  color: #64748b;
-  border: 1px solid #e2e8f0;
-  border-radius: 14px 14px 14px 5px;
-  font-size: 12px;
-  font-style: italic;
 }
 
 /* =========================================================
